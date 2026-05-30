@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Cortex</title>
+  </head>
+  <body>
+    <header class="cx-header">
+      <span class="cx-logo">CORTEX</span>
+      <span class="cx-sub">signal capture</span>
+    </header>
+
+    <!-- Logged-out view -->
+    <section id="login-view" class="cx-section hidden">
+      <label class="cx-label">Email</label>
+      <input id="email" type="email" class="cx-input" placeholder="you@example.com" />
+      <label class="cx-label">Password</label>
+      <input id="password" type="password" class="cx-input" placeholder="••••••••" />
+      <button id="login-btn" class="cx-btn cx-btn-primary">Sign in</button>
+      <p id="login-error" class="cx-error"></p>
+    </section>
+
+    <!-- Logged-in view -->
+    <section id="main-view" class="cx-section hidden">
+      <p class="cx-account">Signed in as <span id="account-email"></span></p>
+      <label class="cx-label">Active project</label>
+      <select id="project-select" class="cx-input"></select>
+      <p class="cx-hint">New highlights are filed here automatically.</p>
+      <button id="logout-btn" class="cx-btn cx-btn-ghost">Sign out</button>
+    </section>
+
+    <p id="status" class="cx-status"></p>
+
+    <script src="config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

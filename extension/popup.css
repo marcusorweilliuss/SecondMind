@@ -1,0 +1,103 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 300px;
+  margin: 0;
+  padding: 16px;
+  background: #111113;
+  color: #e8e8ea;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+}
+.cx-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.cx-logo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #c8a25a;
+}
+.cx-sub {
+  font-size: 11px;
+  color: #71717a;
+  letter-spacing: 0.04em;
+}
+.cx-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hidden {
+  display: none;
+}
+.cx-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a1a1aa;
+  margin-top: 6px;
+}
+.cx-input {
+  background: #1c1c1f;
+  border: 1px solid #34343a;
+  color: #e8e8ea;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.cx-input:focus {
+  outline: none;
+  border-color: #c8a25a;
+}
+.cx-btn {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cx-btn-primary {
+  background: #c8a25a;
+  color: #0a0a0b;
+}
+.cx-btn-ghost {
+  background: transparent;
+  border: 1px solid #34343a;
+  color: #a1a1aa;
+}
+.cx-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.cx-account {
+  color: #a1a1aa;
+  margin: 0 0 4px;
+}
+.cx-account span {
+  color: #e8e8ea;
+}
+.cx-hint {
+  font-size: 11px;
+  color: #71717a;
+  margin: 2px 0 0;
+}
+.cx-error {
+  color: #e0726e;
+  font-size: 12px;
+  min-height: 14px;
+  margin: 4px 0 0;
+}
+.cx-status {
+  color: #71717a;
+  font-size: 11px;
+  margin: 12px 0 0;
+  min-height: 14px;
+}
