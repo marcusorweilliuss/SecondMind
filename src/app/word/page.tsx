@@ -51,14 +51,28 @@ export default function WordPanel() {
 
   // 1. Load Office.js and wait for the host to be ready.
   useEffect(() => {
+    const ready = () => window.Office.onReady(() => setOfficeReady(true));
+
+    // Already loaded (e.g. after a Fast Refresh remount) — just hook in.
     if (window.Office) {
-      window.Office.onReady(() => setOfficeReady(true));
+      ready();
+      return;
+    }
+    // Office.js must only ever be evaluated once, or it throws
+    // "Cannot redefine property: context". Guard against React/StrictMode
+    // double-invocation by reusing a single tagged <script>.
+    const existing = document.getElementById(
+      "office-js"
+    ) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", ready);
       return;
     }
     const s = document.createElement("script");
+    s.id = "office-js";
     s.src = "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
-    s.onload = () => window.Office.onReady(() => setOfficeReady(true));
-    document.body.appendChild(s);
+    s.onload = ready;
+    document.head.appendChild(s);
   }, []);
 
   // Restore a saved session token.

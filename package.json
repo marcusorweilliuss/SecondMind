@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:https": "next dev --experimental-https",
+    "dev:word": "next dev --experimental-https --experimental-https-key \"%USERPROFILE%\\.office-addin-dev-certs\\localhost.key\" --experimental-https-cert \"%USERPROFILE%\\.office-addin-dev-certs\\localhost.crt\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
