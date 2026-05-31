@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import PopOver from "@/components/PopOver";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -10,12 +11,6 @@ declare global {
   }
 }
 
-type DriftResult = { off_track: boolean; reason: string };
-type ContradictionResult = {
-  found: boolean;
-  claim: string;
-  note_text: string;
-};
 type TableResult = {
   is_table: boolean;
   headers?: string[];
@@ -23,6 +18,12 @@ type TableResult = {
   markdown?: string;
 };
 type Project = { id: string; name: string };
+
+type Popup =
+  | { kind: "drift"; reason: string }
+  | { kind: "fact"; note_text: string }
+  | { kind: "table"; table: TableResult }
+  | null;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -38,29 +39,28 @@ export default function WordPanel() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<string>("");
 
-  const [drift, setDrift] = useState<DriftResult | null>(null);
-  const [driftDismissed, setDriftDismissed] = useState(false);
-  const [contradiction, setContradiction] = useState<ContradictionResult | null>(null);
-  const [contradictionDismissed, setContradictionDismissed] = useState(false);
-  const [table, setTable] = useState<TableResult | null>(null);
-  const [status, setStatus] = useState("");
+  const [popup, setPopup] = useState<Popup>(null);
+  const [statusLine, setStatusLine] = useState("waiting for your draft…");
   const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [signalMsg, setSignalMsg] = useState("");
 
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
+  const popupRef = useRef<Popup>(null);
+  popupRef.current = popup;
 
-  // 1. Load Office.js and wait for the host to be ready.
+  const tryOpen = useCallback((p: Popup) => {
+    if (!popupRef.current) setPopup(p);
+  }, []);
+
+  // 1. Load Office.js once.
   useEffect(() => {
     const ready = () => window.Office.onReady(() => setOfficeReady(true));
-
-    // Already loaded (e.g. after a Fast Refresh remount) — just hook in.
     if (window.Office) {
       ready();
       return;
     }
-    // Office.js must only ever be evaluated once, or it throws
-    // "Cannot redefine property: context". Guard against React/StrictMode
-    // double-invocation by reusing a single tagged <script>.
     const existing = document.getElementById(
       "office-js"
     ) as HTMLScriptElement | null;
@@ -75,13 +75,11 @@ export default function WordPanel() {
     document.head.appendChild(s);
   }, []);
 
-  // Restore a saved session token.
   useEffect(() => {
     const saved = localStorage.getItem("cortex_word_token");
     if (saved) setToken(saved);
   }, []);
 
-  // Load projects once authenticated.
   useEffect(() => {
     if (!token) return;
     fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
@@ -100,17 +98,11 @@ export default function WordPanel() {
     setAuthError("");
     setAuthLoading(true);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ email, password }),
-        }
-      );
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ email, password }),
+      });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error_description || d.msg || "Sign-in failed.");
@@ -151,8 +143,13 @@ export default function WordPanel() {
   const runFocusCheck = useCallback(async () => {
     if (!tokenRef.current) return;
     const text = (await readDocText()).trim();
-    if (text.length < 20) return;
+    const words = text ? text.split(/\s+/).length : 0;
+    if (text.length < 20) {
+      setStatusLine("✍️ write a bit more and I'll start checking…");
+      return;
+    }
     setChecking(true);
+    setStatusLine("🧠 reading your draft…");
     try {
       const res = await fetch("/api/focus/check", {
         method: "POST",
@@ -162,21 +159,26 @@ export default function WordPanel() {
         },
         body: JSON.stringify({ writing: text }),
       });
+      if (!res.ok) {
+        setStatusLine(`⚠️ check failed (${res.status})`);
+        return;
+      }
       const d = await res.json();
-      if (d.drift?.off_track) {
-        setDrift(d.drift);
-        setDriftDismissed(false);
-      } else setDrift(null);
       if (d.contradiction?.found) {
-        setContradiction(d.contradiction);
-        setContradictionDismissed(false);
-      } else setContradiction(null);
-    } catch {
-      /* ignore */
+        setStatusLine(`🔍 found a possible factual conflict · ${words} words`);
+        tryOpen({ kind: "fact", note_text: d.contradiction.note_text });
+      } else if (d.drift?.off_track) {
+        setStatusLine(`🧭 looks off-track · ${words} words`);
+        tryOpen({ kind: "drift", reason: d.drift.reason });
+      } else {
+        setStatusLine(`✓ on track · ${words} words`);
+      }
+    } catch (e) {
+      setStatusLine(`⚠️ ${String(e).slice(0, 80)}`);
     } finally {
       setChecking(false);
     }
-  }, [readDocText]);
+  }, [readDocText, tryOpen]);
 
   // --- Behaviour 3: auto-table -------------------------------------------
   const runAutoTable = useCallback(async () => {
@@ -193,20 +195,26 @@ export default function WordPanel() {
         body: JSON.stringify({ text }),
       });
       const d: TableResult = await res.json();
-      setTable(d.is_table ? d : null);
+      if (d.is_table) tryOpen({ kind: "table", table: d });
     } catch {
       /* ignore */
     }
-  }, [readDocText]);
+  }, [readDocText, tryOpen]);
 
-  // 30s focus loop.
+  // Run once as soon as Word + auth are ready.
+  useEffect(() => {
+    if (officeReady && token) runFocusCheck();
+  }, [officeReady, token, runFocusCheck]);
+
+  // Safety-net 30s loop.
   useEffect(() => {
     if (!officeReady || !token) return;
     const id = setInterval(runFocusCheck, 30_000);
     return () => clearInterval(id);
   }, [officeReady, token, runFocusCheck]);
 
-  // 3s-pause auto-table: poll the doc; when text stops changing for 3s, scan.
+  // Idle detector: poll the doc; when it stops changing for 3s, run both the
+  // focus check and the table check automatically — no button needed.
   const lastText = useRef("");
   const lastChange = useRef(0);
   const lastScan = useRef(0);
@@ -220,23 +228,22 @@ export default function WordPanel() {
         lastChange.current = now;
         return;
       }
-      // Unchanged. If it's been >= 3s since the last change and we haven't
-      // scanned this idle period, run the table check.
       if (
         lastChange.current &&
         now - lastChange.current >= 3000 &&
         lastChange.current > lastScan.current
       ) {
         lastScan.current = now;
+        runFocusCheck();
         runAutoTable();
       }
     }, 1500);
     return () => clearInterval(id);
-  }, [officeReady, token, readDocText, runAutoTable]);
+  }, [officeReady, token, readDocText, runFocusCheck, runAutoTable]);
 
   // --- Insert table into Word --------------------------------------------
-  async function insertTable() {
-    if (!table?.headers) return;
+  async function insertTable(table: TableResult) {
+    if (!table.headers) return;
     const headers = table.headers;
     const rows = table.rows ?? [];
     try {
@@ -251,19 +258,18 @@ export default function WordPanel() {
         wordTable.styleBuiltIn = window.Word.BuiltInStyleName.gridTable4_Accent1;
         await context.sync();
       });
-      setTable(null);
-      setStatus("Table inserted.");
-      setTimeout(() => setStatus(""), 2500);
+      setPopup(null);
+      setStatusLine("📊 table inserted ✓");
     } catch {
-      setStatus("Could not insert table.");
+      setStatusLine("⚠️ couldn't insert table");
     }
   }
 
-  function copyTable() {
-    if (!table?.markdown) return;
+  function copyTable(table: TableResult) {
+    if (!table.markdown) return;
     navigator.clipboard.writeText(table.markdown);
-    setStatus("Markdown copied.");
-    setTimeout(() => setStatus(""), 2000);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   }
 
   // --- Behaviour 1: capture the current selection as a signal ------------
@@ -274,11 +280,11 @@ export default function WordPanel() {
       async (result: any) => {
         const text = (result?.value || "").trim();
         if (!text) {
-          setStatus("Select some text first.");
-          setTimeout(() => setStatus(""), 2500);
+          setSignalMsg("Select some text in the doc first ✍️");
+          setTimeout(() => setSignalMsg(""), 2500);
           return;
         }
-        setStatus("Saving signal…");
+        setSignalMsg("saving…");
         try {
           const res = await fetch("/api/signals", {
             method: "POST",
@@ -293,19 +299,17 @@ export default function WordPanel() {
             }),
           });
           const d = await res.json();
-          if (res.ok) {
-            setStatus(
-              d.signal?.connected_to
-                ? `Saved · ${d.signal.connected_to}`
-                : "Signal saved."
-            );
-          } else {
-            setStatus(d.error || "Save failed.");
-          }
+          setSignalMsg(
+            res.ok
+              ? d.signal?.connected_to
+                ? `saved · ${d.signal.connected_to}`
+                : "signal saved ✓"
+              : d.error || "save failed"
+          );
         } catch {
-          setStatus("Save failed.");
+          setSignalMsg("save failed");
         }
-        setTimeout(() => setStatus(""), 5000);
+        setTimeout(() => setSignalMsg(""), 5000);
       }
     );
   }
@@ -317,8 +321,8 @@ export default function WordPanel() {
         <Header />
         <form onSubmit={signIn} className="space-y-3 mt-4">
           <p className="text-xs text-ink-400">
-            Sign in with your Cortex account to bring the focus, fact-check, and
-            table tools into Word.
+            Sign in with your Cortex account to watch this doc for drift, wrong
+            facts, and tables.
           </p>
           <input
             type="email"
@@ -326,7 +330,7 @@ export default function WordPanel() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
-            className="w-full bg-ink-850 border border-ink-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            className="w-full bg-ink-850 border border-ink-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent"
           />
           <input
             type="password"
@@ -334,15 +338,15 @@ export default function WordPanel() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
-            className="w-full bg-ink-850 border border-ink-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            className="w-full bg-ink-850 border border-ink-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent"
           />
-          {authError && <p className="text-xs text-red-400">{authError}</p>}
+          {authError && <p className="text-xs text-coral">{authError}</p>}
           <button
             type="submit"
             disabled={authLoading}
-            className="w-full bg-accent text-ink-950 font-semibold rounded-md py-2 text-sm disabled:opacity-60"
+            className="w-full bg-accent text-ink-950 font-bold rounded-full py-2.5 text-sm disabled:opacity-60"
           >
-            {authLoading ? "Signing in…" : "Sign in"}
+            {authLoading ? "signing in…" : "let's go →"}
           </button>
         </form>
       </div>
@@ -354,12 +358,33 @@ export default function WordPanel() {
       <Header onSignOut={signOut} />
 
       {!officeReady && (
-        <p className="text-xs text-ink-500">Connecting to Word…</p>
+        <p className="text-xs text-ink-500">connecting to Word…</p>
       )}
 
-      {/* Active project for captured signals */}
-      <div>
-        <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+      {/* Always-visible live status */}
+      <div
+        className={`flex items-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-medium border ${
+          checking
+            ? "bg-accent/10 border-accent/40 text-accent"
+            : "bg-ink-900 border-ink-800 text-ink-300"
+        }`}
+      >
+        <span
+          className={`h-2 w-2 rounded-full ${
+            checking ? "bg-accent animate-pulse" : "bg-grass"
+          }`}
+        />
+        {statusLine}
+      </div>
+
+      <p className="text-[11px] text-ink-500 leading-relaxed">
+        I check automatically as you type (and every 30s). Set your task in the
+        Cortex web app so I can catch when you drift off-topic.
+      </p>
+
+      {/* Active project + signal capture */}
+      <div className="space-y-2">
+        <label className="block text-[10px] uppercase tracking-wider text-ink-400">
           Active project
         </label>
         <select
@@ -368,7 +393,7 @@ export default function WordPanel() {
             setActiveProject(e.target.value);
             localStorage.setItem("cortex_word_project", e.target.value);
           }}
-          className="w-full bg-ink-850 border border-ink-700 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-accent"
+          className="w-full bg-ink-850 border border-ink-700 rounded-xl px-2 py-1.5 text-xs focus:outline-none focus:border-accent"
         >
           <option value="">Unfiled</option>
           {projects.map((p) => (
@@ -383,89 +408,122 @@ export default function WordPanel() {
         <button
           onClick={runFocusCheck}
           disabled={checking || !officeReady}
-          className="flex-1 text-xs border border-ink-700 rounded-md px-2 py-1.5 text-ink-200 hover:text-ink-100 disabled:opacity-50"
+          className="flex-1 text-xs font-medium border border-ink-700 rounded-full px-2 py-2 text-ink-200 hover:text-ink-100 disabled:opacity-50"
         >
-          {checking ? "Checking…" : "Check now"}
+          ⚡ check now
         </button>
         <button
           onClick={captureSelection}
           disabled={!officeReady}
-          className="flex-1 text-xs border border-ink-700 rounded-md px-2 py-1.5 text-ink-200 hover:text-ink-100 disabled:opacity-50"
+          className="flex-1 text-xs font-medium border border-ink-700 rounded-full px-2 py-2 text-ink-200 hover:text-ink-100 disabled:opacity-50"
         >
-          Save selection
+          💾 save highlight
         </button>
       </div>
+      {signalMsg && <p className="text-[11px] text-ink-400">{signalMsg}</p>}
 
-      {/* Drift banner */}
-      {drift?.off_track && !driftDismissed && (
-        <div className="bg-ink-850 border border-ink-700 border-l-2 border-l-accent rounded-md px-3 py-2 text-xs cx-fade">
-          <p className="text-ink-100">
-            Heads up — this looks off-track. Still relevant?
-          </p>
-          {drift.reason && (
-            <p className="text-ink-400 mt-1">{drift.reason}</p>
-          )}
+      {/* Pop-ups (centered within the task pane) */}
+      <PopOver
+        open={popup?.kind === "drift"}
+        tone="amber"
+        emoji="🧭"
+        kicker="off the rails?"
+        title="This is drifting off-track."
+        onClose={() => setPopup(null)}
+        actions={
+          <>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-xs font-medium border border-ink-700 rounded-full px-3 py-1.5 text-ink-300"
+            >
+              intentional
+            </button>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-xs font-bold bg-accent text-ink-950 rounded-full px-3 py-1.5"
+            >
+              refocusing
+            </button>
+          </>
+        }
+      >
+        {popup?.kind === "drift" && popup.reason && (
+          <p className="text-xs text-ink-400 text-center">{popup.reason}</p>
+        )}
+      </PopOver>
+
+      <PopOver
+        open={popup?.kind === "fact"}
+        tone="coral"
+        emoji="🔍"
+        kicker="fact check"
+        title="Wait — this might not be right."
+        onClose={() => setPopup(null)}
+        actions={
           <button
-            onClick={() => setDriftDismissed(true)}
-            className="text-ink-500 hover:text-ink-300 mt-1"
+            onClick={() => setPopup(null)}
+            className="text-xs font-bold bg-coral text-ink-950 rounded-full px-3 py-1.5"
           >
-            Dismiss
+            I&apos;ll double-check
           </button>
-        </div>
-      )}
-
-      {/* Contradiction banner */}
-      {contradiction?.found && !contradictionDismissed && (
-        <div className="bg-ink-850 border border-ink-700 border-l-2 border-l-red-500 rounded-md px-3 py-2 text-xs cx-fade">
-          <p className="text-ink-100">
-            This might not be right — your note says{" "}
-            <span className="italic text-ink-300">
-              “{contradiction.note_text}”
+        }
+      >
+        {popup?.kind === "fact" && (
+          <p className="text-xs text-ink-300 text-center">
+            Your note says{" "}
+            <span className="bg-coral/20 text-coral px-1 rounded">
+              “{popup.note_text}”
             </span>
-            .
           </p>
-          <div className="flex gap-3 mt-1">
-            <button
-              onClick={() => setContradictionDismissed(true)}
-              className="text-ink-500 hover:text-ink-300"
-            >
-              Dismiss
-            </button>
-            <button
-              onClick={() => setContradictionDismissed(true)}
-              className="text-ink-500 hover:text-ink-300"
-            >
-              Intentional
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </PopOver>
 
-      {/* Auto-table suggestion */}
-      {table?.is_table && (
-        <div className="bg-ink-850 border border-ink-800 rounded-md px-3 py-2 text-xs cx-fade space-y-2">
-          <p className="text-ink-300">This looks like it could be a table.</p>
-          <div className="overflow-auto max-h-40">
+      <PopOver
+        open={popup?.kind === "table"}
+        tone="yellow"
+        emoji="📊"
+        kicker="ooh, a table?"
+        title="Want this as a table?"
+        wide
+        onClose={() => setPopup(null)}
+        actions={
+          popup?.kind === "table" ? (
+            <>
+              <button
+                onClick={() => copyTable(popup.table)}
+                className="text-xs font-medium border border-ink-700 rounded-full px-3 py-1.5 text-ink-300"
+              >
+                {copied ? "copied ✓" : "copy md"}
+              </button>
+              <button
+                onClick={() => insertTable(popup.table)}
+                className="text-xs font-bold bg-accent text-ink-950 rounded-full px-3 py-1.5"
+              >
+                drop it in ↓
+              </button>
+            </>
+          ) : null
+        }
+      >
+        {popup?.kind === "table" && (
+          <div className="overflow-auto rounded-xl border border-ink-800 max-h-56">
             <table className="w-full text-[11px] font-mono border-collapse">
-              <thead>
+              <thead className="bg-ink-850">
                 <tr>
-                  {(table.headers ?? []).map((h, i) => (
-                    <th
-                      key={i}
-                      className="text-left border-b border-ink-700 px-2 py-1 text-ink-300"
-                    >
+                  {(popup.table.headers ?? []).map((h, i) => (
+                    <th key={i} className="text-left px-2 py-1 text-accent font-bold">
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {(table.rows ?? []).map((row, ri) => (
+                {(popup.table.rows ?? []).map((row, ri) => (
                   <tr key={ri}>
                     {row.map((cell, ci) => (
                       <td
                         key={ci}
-                        className="border-b border-ink-800 px-2 py-1 text-ink-200"
+                        className="px-2 py-1 text-ink-200 border-t border-ink-800 align-top"
                       >
                         {cell}
                       </td>
@@ -475,29 +533,8 @@ export default function WordPanel() {
               </tbody>
             </table>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={insertTable}
-              className="flex-1 bg-accent text-ink-950 font-semibold rounded-md py-1.5"
-            >
-              Insert into doc
-            </button>
-            <button
-              onClick={copyTable}
-              className="flex-1 border border-ink-700 rounded-md py-1.5 text-ink-300"
-            >
-              Copy markdown
-            </button>
-          </div>
-        </div>
-      )}
-
-      {status && <p className="text-xs text-ink-400">{status}</p>}
-
-      <p className="text-[10px] text-ink-600 pt-2 border-t border-ink-800">
-        Cortex checks your draft for drift and factual conflicts every 30s, and
-        suggests tables when you pause.
-      </p>
+        )}
+      </PopOver>
     </div>
   );
 }
@@ -505,15 +542,15 @@ export default function WordPanel() {
 function Header({ onSignOut }: { onSignOut?: () => void }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="font-mono font-bold tracking-[0.2em] text-accent text-sm">
-        CORTEX
+      <span className="flex items-center gap-1.5 font-black tracking-tight text-accent">
+        <span>🧠</span> cortex
       </span>
       {onSignOut && (
         <button
           onClick={onSignOut}
-          className="text-[10px] text-ink-500 hover:text-ink-300 border border-ink-700 rounded px-2 py-0.5"
+          className="text-[10px] text-ink-500 hover:text-ink-300 border border-ink-700 rounded-full px-2 py-0.5"
         >
-          Sign out
+          sign out
         </button>
       )}
     </div>
