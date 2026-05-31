@@ -72,6 +72,43 @@ Sign up at `/login`, then create a project under **Projects**.
 3. Open the popup, sign in with the same account, pick an active project.
 4. Highlight text on any page → click **+ Signal**.
 
+## Word Add-in (Behaviours 1–3 inside Microsoft Word)
+
+The Chrome extension and `/focus` surface only work in the browser. To bring the
+focus nudge, fact-check, auto-table, and signal capture into **Microsoft Word
+desktop (Windows/Mac) and Word on the web**, sideload the Office Add-in.
+
+The add-in is a side panel served from the Next.js app at `/word`; it reuses the
+same API routes. Office requires HTTPS, so run the app over HTTPS in dev:
+
+```bash
+npm run dev:https
+```
+
+This serves the app at `https://localhost:3000` (Next generates a self-signed
+cert; accept the browser warning once at https://localhost:3000).
+
+Then sideload `office-addin/manifest.xml`:
+
+- **Word on Windows:** put `manifest.xml` in a folder, share it, and trust it as
+  a [shared catalog](https://learn.microsoft.com/office/dev/add-ins/testing/create-a-network-shared-folder-catalog-for-task-pane-and-content-add-ins),
+  or use `npx office-addin-debugging start office-addin/manifest.xml`.
+- **Word on the web:** open a doc → **Home → Add-ins → More Add-ins → My
+  Add-ins → Upload My Add-in** → choose `manifest.xml`.
+
+Then **Home tab → Open Cortex** to open the panel. Sign in with your Cortex
+account and pick an active project.
+
+What the panel does:
+- **Check now / every 30s** — reads the document text and flags drift + factual
+  conflicts (Behaviour 2).
+- **On a 3s pause** — suggests a table and can insert a real Word table or copy
+  markdown (Behaviour 3).
+- **Save selection** — files the selected text as a connected signal (Behaviour 1).
+
+> For production, replace every `https://localhost:3000` in `manifest.xml` with
+> your deployed app URL.
+
 ## AI calls
 
 All Gemini calls are live (no stubs) and routed through `src/lib/gemini.ts`,

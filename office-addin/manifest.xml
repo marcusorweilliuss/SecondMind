@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cortex Word Add-in manifest.
+
+  Before sideloading, replace every occurrence of https://localhost:3000 with
+  the URL your Next.js app is served from. For local testing, run the app over
+  HTTPS (see README) so Word will load the task pane.
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <Id>c0a8f1e2-3b4c-4d5e-6f70-8a9b0c1d2e3f</Id>
+  <Version>0.1.0</Version>
+  <ProviderName>Cortex</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Cortex" />
+  <Description DefaultValue="Focus, fact-check, and table tools for your draft, powered by Cortex." />
+  <IconUrl DefaultValue="https://localhost:3000/assets/cortex-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/cortex-80.png" />
+  <SupportUrl DefaultValue="https://localhost:3000" />
+
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/word" />
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides
+    xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+    xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="Cortex.Title" />
+            <Description resid="Cortex.Desc" />
+            <LearnMoreUrl resid="Cortex.Url" />
+          </GetStarted>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="Cortex.Group">
+                <Label resid="Cortex.Group.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="Cortex.Icon.16" />
+                  <bt:Image size="32" resid="Cortex.Icon.32" />
+                  <bt:Image size="80" resid="Cortex.Icon.80" />
+                </Icon>
+                <Control xsi:type="Button" id="Cortex.OpenButton">
+                  <Label resid="Cortex.Button.Label" />
+                  <Supertip>
+                    <Title resid="Cortex.Button.Label" />
+                    <Description resid="Cortex.Button.Tip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Cortex.Icon.16" />
+                    <bt:Image size="32" resid="Cortex.Icon.32" />
+                    <bt:Image size="80" resid="Cortex.Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>Cortex.Taskpane</TaskpaneId>
+                    <SourceLocation resid="Cortex.Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Cortex.Icon.16" DefaultValue="https://localhost:3000/assets/cortex-16.png" />
+        <bt:Image id="Cortex.Icon.32" DefaultValue="https://localhost:3000/assets/cortex-32.png" />
+        <bt:Image id="Cortex.Icon.80" DefaultValue="https://localhost:3000/assets/cortex-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Cortex.Url" DefaultValue="https://localhost:3000" />
+        <bt:Url id="Cortex.Taskpane.Url" DefaultValue="https://localhost:3000/word" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Cortex.Title" DefaultValue="Cortex" />
+        <bt:String id="Cortex.Group.Label" DefaultValue="Cortex" />
+        <bt:String id="Cortex.Button.Label" DefaultValue="Open Cortex" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="Cortex.Desc" DefaultValue="Focus, fact-check, and table tools for your draft." />
+        <bt:String id="Cortex.Button.Tip" DefaultValue="Open the Cortex panel to watch your draft for drift, factual conflicts, and tables." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
