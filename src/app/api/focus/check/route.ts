@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { llmJSON } from "@/lib/llm";
+import { tavilySearch } from "@/lib/tavily";
 
 export const runtime = "nodejs";
 
@@ -110,15 +111,44 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // When there's a real contradiction, fetch a credible corroborating source
+  // for the correct answer (your note). The URL comes from live Tavily search,
+  // never from the model, so it can't be hallucinated. Best-effort: if Tavily
+  // isn't configured or fails, we still return the correction without a link.
+  let source: { title: string; url: string } | null = null;
+  if (noteText && process.env.TAVILY_API_KEY) {
+    try {
+      const results = await tavilySearch(noteText, {
+        maxResults: 1,
+        searchDepth: "basic",
+      });
+      if (results[0]) {
+        source = { title: results[0].title, url: results[0].url };
+      }
+    } catch {
+      source = null;
+    }
+  }
+
   const contradiction = noteText
     ? {
         found: true,
         note_index: result.contradiction.note_index,
         claim: result.contradiction.claim ?? "",
         note_text: noteText,
+        correction: noteText, // the right answer, per your own notes
+        source,
         note_id: noteId,
       }
-    : { found: false, note_index: null, claim: "", note_text: "", note_id: null };
+    : {
+        found: false,
+        note_index: null,
+        claim: "",
+        note_text: "",
+        correction: "",
+        source: null,
+        note_id: null,
+      };
 
   return NextResponse.json({
     drift: result.drift,

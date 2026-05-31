@@ -19,9 +19,16 @@ type TableResult = {
 };
 type Project = { id: string; name: string };
 
+type Source = { title: string; url: string } | null;
 type Popup =
   | { kind: "drift"; reason: string }
-  | { kind: "fact"; note_text: string; claim: string }
+  | {
+      kind: "fact";
+      note_text: string;
+      claim: string;
+      correction: string;
+      source: Source;
+    }
   | { kind: "table"; table: TableResult }
   | null;
 
@@ -170,6 +177,8 @@ export default function WordPanel() {
           kind: "fact",
           note_text: d.contradiction.note_text,
           claim: d.contradiction.claim || "",
+          correction: d.contradiction.correction || d.contradiction.note_text,
+          source: d.contradiction.source || null,
         });
       } else if (d.drift?.off_track) {
         setStatusLine(`🧭 looks off-track · ${words} words`);
@@ -477,17 +486,27 @@ export default function WordPanel() {
             {popup.claim && (
               <p>
                 You wrote{" "}
-                <span className="bg-ink-800 text-ink-100 px-1 rounded">
+                <span className="bg-ink-800 text-ink-100 px-1 rounded line-through decoration-coral/70">
                   “{popup.claim}”
                 </span>
               </p>
             )}
-            <p>
-              but your note says{" "}
-              <span className="bg-coral/20 text-coral px-1 rounded">
-                “{popup.note_text}”
-              </span>
-            </p>
+            <div className="bg-grass/10 border border-grass/30 rounded-xl px-3 py-2 text-left">
+              <p className="text-[10px] uppercase tracking-wider text-grass font-bold mb-0.5">
+                ✅ the right answer
+              </p>
+              <p className="text-ink-100">{popup.correction}</p>
+              {popup.source && (
+                <a
+                  href={popup.source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-sky hover:underline break-all"
+                >
+                  📚 {popup.source.title}
+                </a>
+              )}
+            </div>
           </div>
         )}
       </PopOver>

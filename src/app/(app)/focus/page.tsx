@@ -18,9 +18,16 @@ type TableResult = {
   markdown?: string;
 };
 
+type Source = { title: string; url: string } | null;
 type Popup =
   | { kind: "drift"; reason: string }
-  | { kind: "fact"; note_text: string; claim: string }
+  | {
+      kind: "fact";
+      note_text: string;
+      claim: string;
+      correction: string;
+      source: Source;
+    }
   | { kind: "table"; table: TableResult }
   | null;
 
@@ -150,6 +157,8 @@ export default function FocusPage() {
           kind: "fact",
           note_text: d.contradiction.note_text,
           claim: d.contradiction.claim || "",
+          correction: d.contradiction.correction || d.contradiction.note_text,
+          source: d.contradiction.source || null,
         });
       } else if (d.drift?.off_track) {
         tryOpen({ kind: "drift", reason: d.drift.reason });
@@ -380,21 +389,31 @@ export default function FocusPage() {
         }
       >
         {popup?.kind === "fact" && (
-          <div className="text-sm text-ink-300 text-center leading-relaxed space-y-2">
+          <div className="text-sm text-ink-300 text-center leading-relaxed space-y-3">
             {popup.claim && (
               <p>
                 You wrote{" "}
-                <span className="bg-ink-800 text-ink-100 px-1 rounded">
+                <span className="bg-ink-800 text-ink-100 px-1 rounded line-through decoration-coral/70">
                   “{popup.claim}”
                 </span>
               </p>
             )}
-            <p>
-              but your earlier note says{" "}
-              <span className="bg-coral/20 text-coral px-1 rounded">
-                “{popup.note_text}”
-              </span>
-            </p>
+            <div className="bg-grass/10 border border-grass/30 rounded-2xl px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-wider text-grass font-bold mb-1">
+                ✅ the right answer
+              </p>
+              <p className="text-ink-100">{popup.correction}</p>
+              {popup.source && (
+                <a
+                  href={popup.source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-sky hover:underline break-all"
+                >
+                  📚 {popup.source.title}
+                </a>
+              )}
+            </div>
           </div>
         )}
       </PopOver>
