@@ -5,9 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const TABS = [
-  { href: "/focus", label: "Focus" },
-  { href: "/radar", label: "Radar" },
-  { href: "/projects", label: "Projects" },
+  { href: "/focus", label: "Focus", emoji: "🧠" },
+  { href: "/radar", label: "Radar", emoji: "📡" },
+  { href: "/projects", label: "Projects", emoji: "🗂️" },
 ];
 
 export default function Nav({ email }: { email?: string }) {
@@ -23,13 +23,13 @@ export default function Nav({ email }: { email?: string }) {
 
   return (
     <header className="border-b border-ink-800 bg-ink-950/80 backdrop-blur sticky top-0 z-40">
-      <div className="mx-auto max-w-5xl px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <Link
-            href="/focus"
-            className="font-mono font-bold tracking-[0.2em] text-accent text-sm"
-          >
-            CORTEX
+      <div className="mx-auto max-w-5xl px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <Link href="/focus" className="flex items-center gap-2 group">
+            <span className="text-xl group-hover:animate-wiggle">🧠</span>
+            <span className="font-black tracking-tight text-lg text-accent">
+              cortex
+            </span>
           </Link>
           <nav className="flex items-center gap-1">
             {TABS.map((tab) => {
@@ -38,12 +38,13 @@ export default function Nav({ email }: { email?: string }) {
                 <Link
                   key={tab.href}
                   href={tab.href}
-                  className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all ${
                     active
-                      ? "text-ink-100 bg-ink-800"
-                      : "text-ink-400 hover:text-ink-200"
+                      ? "text-ink-950 bg-accent"
+                      : "text-ink-400 hover:text-ink-100 hover:bg-ink-800"
                   }`}
                 >
+                  <span className="mr-1">{tab.emoji}</span>
                   {tab.label}
                 </Link>
               );
@@ -58,9 +59,9 @@ export default function Nav({ email }: { email?: string }) {
           )}
           <button
             onClick={signOut}
-            className="text-xs text-ink-400 hover:text-ink-200 border border-ink-700 rounded-md px-2.5 py-1"
+            className="text-xs font-medium text-ink-400 hover:text-ink-100 border border-ink-700 hover:border-ink-600 rounded-full px-3 py-1"
           >
-            Sign out
+            peace out ✌️
           </button>
         </div>
       </div>

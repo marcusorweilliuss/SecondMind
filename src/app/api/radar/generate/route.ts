@@ -127,9 +127,13 @@ export async function POST(req: NextRequest) {
   const seenUrls = new Set((existing ?? []).map((r) => r.url));
 
   let surfaced = 0;
+  const debug: Array<Record<string, unknown>> = [];
 
   // 3-5. For each vector: two Tavily passes, score with Gemini, filter, store.
   for (const vector of allVectors) {
+    const dbg: Record<string, unknown> = { vector };
+    debug.push(dbg);
+
     let recent: TavilyResult[] = [];
     let foundational: TavilyResult[] = [];
     try {
@@ -139,9 +143,12 @@ export async function POST(req: NextRequest) {
           maxResults: 5,
         }),
       ]);
-    } catch {
+    } catch (e) {
+      dbg.searchError = String(e).slice(0, 300);
       continue; // skip this vector on search failure
     }
+    dbg.recent = recent.length;
+    dbg.foundational = foundational.length;
 
     // Dedupe by URL within this vector and against what we've already stored.
     const byUrl = new Map<string, TavilyResult>();
@@ -150,6 +157,7 @@ export async function POST(req: NextRequest) {
       byUrl.set(r.url, r);
     }
     const candidates = Array.from(byUrl.values());
+    dbg.candidates = candidates.length;
     if (candidates.length === 0) continue;
 
     const resultList = candidates
@@ -166,10 +174,16 @@ export async function POST(req: NextRequest) {
         `CURRENT WORK:\n${contextText}\n\nINTEREST VECTOR: ${vector}\n\nRESULTS:\n${resultList}`,
         { temperature: 0.3, maxOutputTokens: 2000 }
       );
-    } catch {
+    } catch (e) {
+      dbg.scoreError = String(e).slice(0, 300);
       continue;
     }
+    dbg.scored = (scored.items ?? []).length;
+    dbg.topScores = (scored.items ?? [])
+      .slice(0, 5)
+      .map((i) => `r${i.relevance}/n${i.novelty}/a${i.actionability}`);
 
+    let vectorSurfaced = 0;
     for (const item of scored.items ?? []) {
       const idx = item.index - 1;
       const cand = candidates[idx];
@@ -199,13 +213,16 @@ export async function POST(req: NextRequest) {
         dismissed: false,
       });
       surfaced += 1;
+      vectorSurfaced += 1;
     }
+    dbg.surfaced = vectorSurfaced;
   }
 
   return NextResponse.json({
     ok: true,
     vectors: allVectors,
     surfaced,
+    debug,
   });
 }
 

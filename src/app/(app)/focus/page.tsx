@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import PopOver from "@/components/PopOver";
 
 type DriftResult = { off_track: boolean; reason: string };
 type ContradictionResult = {
@@ -17,34 +18,43 @@ type TableResult = {
   markdown?: string;
 };
 
+type Popup =
+  | { kind: "drift"; reason: string }
+  | { kind: "fact"; note_text: string }
+  | { kind: "table"; table: TableResult }
+  | null;
+
 export default function FocusPage() {
-  // Task context ------------------------------------------------------------
+  // Task context
   const [taskDescription, setTaskDescription] = useState("");
   const [emailThread, setEmailThread] = useState("");
   const [savingTask, setSavingTask] = useState(false);
   const [taskSaved, setTaskSaved] = useState(false);
 
-  // Gmail -------------------------------------------------------------------
+  // Gmail
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [pullingThread, setPullingThread] = useState(false);
 
-  // Writing surface ---------------------------------------------------------
+  // Writing surface
   const [writing, setWriting] = useState("");
-  const [drift, setDrift] = useState<DriftResult | null>(null);
-  const [driftDismissed, setDriftDismissed] = useState(false);
-  const [contradiction, setContradiction] = useState<ContradictionResult | null>(null);
-  const [contradictionDismissed, setContradictionDismissed] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [wordCount, setWordCount] = useState(0);
 
-  // Auto-table --------------------------------------------------------------
-  const [table, setTable] = useState<TableResult | null>(null);
-  const [showTableModal, setShowTableModal] = useState(false);
+  // Single active centered popup + dismissal memory
+  const [popup, setPopup] = useState<Popup>(null);
   const [copied, setCopied] = useState(false);
+  const popupRef = useRef<Popup>(null);
+  popupRef.current = popup;
 
   const writingRef = useRef(writing);
   writingRef.current = writing;
 
-  // Load existing task context + gmail status on mount.
+  // open a popup only if none is currently showing
+  const tryOpen = useCallback((p: Popup) => {
+    if (!popupRef.current) setPopup(p);
+  }, []);
+
   useEffect(() => {
     fetch("/api/task-context")
       .then((r) => r.json())
@@ -64,7 +74,6 @@ export default function FocusPage() {
       .catch(() => {});
   }, []);
 
-  // Listen for the OAuth popup completion.
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.data?.type === "cortex-gmail-connected") {
@@ -124,10 +133,11 @@ export default function FocusPage() {
     }
   }
 
-  // Behaviour 2: drift + fact guard every 30s.
+  // Behaviour 2: drift + fact guard every 30s
   const runFocusCheck = useCallback(async () => {
     const text = writingRef.current.trim();
     if (text.length < 20) return;
+    setChecking(true);
     try {
       const res = await fetch("/api/focus/check", {
         method: "POST",
@@ -135,33 +145,28 @@ export default function FocusPage() {
         body: JSON.stringify({ writing: text }),
       });
       const d = await res.json();
-      if (d.drift?.off_track) {
-        setDrift(d.drift);
-        setDriftDismissed(false);
-      } else {
-        setDrift(null);
-      }
       if (d.contradiction?.found) {
-        setContradiction(d.contradiction);
-        setContradictionDismissed(false);
-      } else {
-        setContradiction(null);
+        tryOpen({ kind: "fact", note_text: d.contradiction.note_text });
+      } else if (d.drift?.off_track) {
+        tryOpen({ kind: "drift", reason: d.drift.reason });
       }
     } catch {
-      /* ignore transient failures */
+      /* ignore */
+    } finally {
+      setChecking(false);
     }
-  }, []);
+  }, [tryOpen]);
 
   useEffect(() => {
     const id = setInterval(runFocusCheck, 30_000);
     return () => clearInterval(id);
   }, [runFocusCheck]);
 
-  // Behaviour 3: auto-table after a 3s pause.
+  // Behaviour 3: auto-table after a 3s pause
   const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function onWritingChange(value: string) {
     setWriting(value);
-    setTaskSaved(false);
+    setWordCount(value.trim() ? value.trim().split(/\s+/).length : 0);
     if (pauseTimer.current) clearTimeout(pauseTimer.current);
     pauseTimer.current = setTimeout(async () => {
       if (value.trim().split(/\s+/).length < 25) return;
@@ -172,76 +177,96 @@ export default function FocusPage() {
           body: JSON.stringify({ text: value }),
         });
         const d: TableResult = await res.json();
-        setTable(d.is_table ? d : null);
+        if (d.is_table) tryOpen({ kind: "table", table: d });
       } catch {
         /* ignore */
       }
     }, 3000);
   }
 
-  function insertTable() {
-    if (!table?.markdown) return;
+  function insertTable(table: TableResult) {
+    if (!table.markdown) return;
     setWriting((prev) => `${prev.trimEnd()}\n\n${table.markdown}\n`);
-    setTable(null);
-    setShowTableModal(false);
+    setPopup(null);
   }
 
-  function copyTable() {
-    if (!table?.markdown) return;
+  function copyTable(table: TableResult) {
+    if (!table.markdown) return;
     navigator.clipboard.writeText(table.markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
 
   return (
-    <div className="space-y-8 cx-fade">
-      <div>
-        <h1 className="text-xl font-semibold">Focus</h1>
-        <p className="text-ink-400 text-sm mt-1">
-          Set your task, then write. Cortex watches for drift, factual conflicts,
-          and structure worth tabling.
-        </p>
+    <div className="space-y-8">
+      {/* Hero */}
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">
+            Focus mode <span className="inline-block animate-floaty">🧠</span>
+          </h1>
+          <p className="text-ink-400 text-sm mt-1.5">
+            Drop your assignment, start typing, and your second mind keeps you on
+            track.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-medium ${
+              checking
+                ? "bg-accent/15 text-accent"
+                : "bg-grass/10 text-grass"
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                checking ? "bg-accent animate-pulse" : "bg-grass"
+              }`}
+            />
+            {checking ? "thinking…" : "watching"}
+          </span>
+        </div>
       </div>
 
-      {/* Task context ------------------------------------------------------ */}
-      <section className="bg-ink-900 border border-ink-800 rounded-xl p-5 space-y-4">
+      {/* Task context */}
+      <section className="bg-ink-900 border border-ink-800 rounded-3xl p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-ink-200">Current task</h2>
-          <div className="flex items-center gap-2">
-            {gmailConnected ? (
-              <button
-                onClick={pullThread}
-                disabled={pullingThread}
-                className="text-xs border border-ink-700 rounded-md px-2.5 py-1 text-ink-300 hover:text-ink-100 disabled:opacity-60"
-              >
-                {pullingThread ? "Pulling…" : "Pull recent thread"}
-              </button>
-            ) : (
-              <button
-                onClick={connectGmail}
-                className="text-xs border border-ink-700 rounded-md px-2.5 py-1 text-ink-300 hover:text-ink-100"
-              >
-                Connect Gmail
-              </button>
-            )}
-          </div>
+          <h2 className="text-sm font-bold text-ink-100 flex items-center gap-2">
+            <span>🎯</span> What are you working on?
+          </h2>
+          {gmailConnected ? (
+            <button
+              onClick={pullThread}
+              disabled={pullingThread}
+              className="text-xs font-medium border border-ink-700 rounded-full px-3 py-1 text-ink-300 hover:text-ink-100 hover:border-ink-600 disabled:opacity-60"
+            >
+              {pullingThread ? "pulling…" : "📥 pull recent email"}
+            </button>
+          ) : (
+            <button
+              onClick={connectGmail}
+              className="text-xs font-medium border border-ink-700 rounded-full px-3 py-1 text-ink-300 hover:text-ink-100 hover:border-ink-600"
+            >
+              ✉️ connect Gmail
+            </button>
+          )}
         </div>
         {gmailConnected && gmailEmail && (
-          <p className="text-xs text-ink-500 font-mono">Gmail: {gmailEmail}</p>
+          <p className="text-xs text-ink-500 font-mono">📬 {gmailEmail}</p>
         )}
         <textarea
           value={taskDescription}
           onChange={(e) => setTaskDescription(e.target.value)}
-          placeholder="Paste an email or note describing what you're working on and your priorities…"
-          rows={4}
-          className="w-full bg-ink-850 border border-ink-700 rounded-md px-3 py-2 text-sm leading-relaxed focus:outline-none focus:border-accent resize-y"
+          placeholder="e.g. Essay comparing the causes of WWI and WWII — focus on alliances, economics, and ideology. Don't get sidetracked into the Cold War."
+          rows={3}
+          className="w-full bg-ink-850 border border-ink-700 rounded-2xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-accent resize-y"
         />
         {emailThread && (
           <details className="text-sm">
             <summary className="cursor-pointer text-ink-400 hover:text-ink-200 text-xs">
-              Linked email thread ({emailThread.length} chars)
+              📎 linked email thread ({emailThread.length} chars)
             </summary>
-            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap bg-ink-850 border border-ink-800 rounded-md p-3 text-xs text-ink-300 font-mono">
+            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap bg-ink-850 border border-ink-800 rounded-2xl p-3 text-xs text-ink-300 font-mono">
               {emailThread}
             </pre>
           </details>
@@ -250,161 +275,177 @@ export default function FocusPage() {
           <button
             onClick={saveTask}
             disabled={savingTask || !taskDescription.trim()}
-            className="bg-accent text-ink-950 text-sm font-semibold rounded-md px-4 py-1.5 disabled:opacity-50"
+            className="bg-accent text-ink-950 text-sm font-bold rounded-full px-5 py-2 disabled:opacity-50 hover:brightness-105 active:scale-95 transition"
           >
-            {savingTask ? "Saving…" : "Set task"}
+            {savingTask ? "saving…" : "lock it in →"}
           </button>
-          {taskSaved && <span className="text-xs text-accent">Saved.</span>}
+          {taskSaved && (
+            <span className="text-xs text-grass font-medium animate-pop-in">
+              locked in ✓
+            </span>
+          )}
         </div>
       </section>
 
-      {/* Writing surface --------------------------------------------------- */}
+      {/* Writing surface */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-ink-200">Writing</h2>
-          <button
-            onClick={runFocusCheck}
-            className="text-xs text-ink-500 hover:text-ink-300"
-          >
-            Check now
-          </button>
-        </div>
-
-        {/* Drift banner */}
-        {drift?.off_track && !driftDismissed && (
-          <div className="flex items-start justify-between gap-3 bg-ink-850 border border-ink-700 border-l-2 border-l-accent rounded-md px-4 py-2.5 text-sm cx-fade">
-            <div>
-              <span className="text-ink-100">
-                Heads up — this looks off-track. Still relevant?
-              </span>
-              {drift.reason && (
-                <span className="block text-ink-400 text-xs mt-0.5">
-                  {drift.reason}
-                </span>
-              )}
-            </div>
+          <h2 className="text-sm font-bold text-ink-100 flex items-center gap-2">
+            <span>✍️</span> Your draft
+          </h2>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-ink-500 font-mono">
+              {wordCount} words
+            </span>
             <button
-              onClick={() => setDriftDismissed(true)}
-              className="text-ink-500 hover:text-ink-300 text-xs whitespace-nowrap"
+              onClick={runFocusCheck}
+              className="text-xs font-medium text-accent hover:text-accent-soft"
             >
-              Dismiss
+              check me now ⚡
             </button>
           </div>
-        )}
-
-        {/* Contradiction banner */}
-        {contradiction?.found && !contradictionDismissed && (
-          <div className="flex items-start justify-between gap-3 bg-ink-850 border border-ink-700 border-l-2 border-l-red-500 rounded-md px-4 py-2.5 text-sm cx-fade">
-            <div>
-              <span className="text-ink-100">
-                This might not be right — your earlier note says{" "}
-                <span className="italic text-ink-300">
-                  “{contradiction.note_text}”
-                </span>
-                . Want to double-check?
-              </span>
-            </div>
-            <div className="flex flex-col items-end gap-1 whitespace-nowrap">
-              <button
-                onClick={() => setContradictionDismissed(true)}
-                className="text-ink-500 hover:text-ink-300 text-xs"
-              >
-                Dismiss
-              </button>
-              <button
-                onClick={() => setContradictionDismissed(true)}
-                className="text-ink-500 hover:text-ink-300 text-xs"
-              >
-                Intentional divergence
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
 
         <textarea
           value={writing}
           onChange={(e) => onWritingChange(e.target.value)}
-          placeholder="Start writing… Cortex reviews for drift and factual conflicts every 30s, and suggests tables when you pause."
-          rows={16}
-          className="w-full bg-ink-900 border border-ink-800 rounded-xl px-5 py-4 text-[15px] leading-7 font-sans focus:outline-none focus:border-ink-600 resize-y"
+          placeholder="Start writing… I'll pop in if you wander off-topic, fact-check against your notes, and offer to build tables when you pause. Just vibe. ✨"
+          rows={18}
+          className="w-full bg-ink-900 border border-ink-800 rounded-3xl px-6 py-5 text-[16px] leading-8 focus:outline-none focus:border-ink-600 resize-y shadow-inner"
         />
-
-        {/* Auto-table suggestion */}
-        {table?.is_table && (
-          <div className="flex items-center justify-between bg-ink-850 border border-ink-800 rounded-md px-4 py-2.5 text-sm cx-fade">
-            <span className="text-ink-300">
-              This looks like it could be a table.
-            </span>
-            <button
-              onClick={() => setShowTableModal(true)}
-              className="text-accent hover:underline text-sm"
-            >
-              Preview
-            </button>
-          </div>
-        )}
+        <p className="text-center text-[11px] text-ink-600">
+          auto-checks every 30s · table radar fires when you pause for 3s
+        </p>
       </section>
 
-      {/* Table modal */}
-      {showTableModal && table?.is_table && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-6"
-          onClick={() => setShowTableModal(false)}
-        >
-          <div
-            className="bg-ink-900 border border-ink-700 rounded-xl p-6 max-w-2xl w-full cx-fade"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-sm font-medium text-ink-200 mb-4">
-              Table preview
-            </h3>
-            <div className="overflow-auto">
-              <table className="w-full text-sm font-mono border-collapse">
-                <thead>
-                  <tr>
-                    {(table.headers ?? []).map((h, i) => (
-                      <th
-                        key={i}
-                        className="text-left border-b border-ink-700 px-3 py-2 text-ink-300 font-medium"
+      {/* Drift popup */}
+      <PopOver
+        open={popup?.kind === "drift"}
+        tone="amber"
+        emoji="🧭"
+        kicker="off the rails?"
+        title="Heads up — this is drifting off-track."
+        onClose={() => setPopup(null)}
+        actions={
+          <>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-sm font-medium border border-ink-700 rounded-full px-4 py-2 text-ink-300 hover:text-ink-100"
+            >
+              it&apos;s intentional
+            </button>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-sm font-bold bg-accent text-ink-950 rounded-full px-4 py-2 active:scale-95 transition"
+            >
+              got it, refocusing
+            </button>
+          </>
+        }
+      >
+        {popup?.kind === "drift" && popup.reason && (
+          <p className="text-sm text-ink-400 text-center leading-relaxed">
+            {popup.reason}
+          </p>
+        )}
+      </PopOver>
+
+      {/* Fact-check popup */}
+      <PopOver
+        open={popup?.kind === "fact"}
+        tone="coral"
+        emoji="🔍"
+        kicker="fact check"
+        title="Wait — this might not be right."
+        onClose={() => setPopup(null)}
+        actions={
+          <>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-sm font-medium border border-ink-700 rounded-full px-4 py-2 text-ink-300 hover:text-ink-100"
+            >
+              intentional divergence
+            </button>
+            <button
+              onClick={() => setPopup(null)}
+              className="text-sm font-bold bg-coral text-ink-950 rounded-full px-4 py-2 active:scale-95 transition"
+            >
+              I&apos;ll double-check
+            </button>
+          </>
+        }
+      >
+        {popup?.kind === "fact" && (
+          <p className="text-sm text-ink-300 text-center leading-relaxed">
+            Your earlier note says{" "}
+            <span className="bg-coral/20 text-coral px-1 rounded">
+              “{popup.note_text}”
+            </span>
+          </p>
+        )}
+      </PopOver>
+
+      {/* Auto-table popup */}
+      <PopOver
+        open={popup?.kind === "table"}
+        tone="yellow"
+        emoji="📊"
+        kicker="ooh, a table?"
+        title="This is comparing a few things — want a table?"
+        wide
+        onClose={() => setPopup(null)}
+        actions={
+          popup?.kind === "table" ? (
+            <>
+              <button
+                onClick={() => copyTable(popup.table)}
+                className="text-sm font-medium border border-ink-700 rounded-full px-4 py-2 text-ink-300 hover:text-ink-100"
+              >
+                {copied ? "copied ✓" : "copy markdown"}
+              </button>
+              <button
+                onClick={() => insertTable(popup.table)}
+                className="text-sm font-bold bg-accent text-ink-950 rounded-full px-4 py-2 active:scale-95 transition"
+              >
+                drop it in ↓
+              </button>
+            </>
+          ) : null
+        }
+      >
+        {popup?.kind === "table" && (
+          <div className="overflow-auto rounded-2xl border border-ink-800 max-h-72">
+            <table className="w-full text-sm font-mono border-collapse">
+              <thead className="bg-ink-850 sticky top-0">
+                <tr>
+                  {(popup.table.headers ?? []).map((h, i) => (
+                    <th
+                      key={i}
+                      className="text-left px-3 py-2 text-accent font-bold whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(popup.table.rows ?? []).map((row, ri) => (
+                  <tr key={ri} className="even:bg-ink-850/40">
+                    {row.map((cell, ci) => (
+                      <td
+                        key={ci}
+                        className="px-3 py-2 text-ink-200 border-t border-ink-800 align-top"
                       >
-                        {h}
-                      </th>
+                        {cell}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {(table.rows ?? []).map((row, ri) => (
-                    <tr key={ri}>
-                      {row.map((cell, ci) => (
-                        <td
-                          key={ci}
-                          className="border-b border-ink-800 px-3 py-2 text-ink-200"
-                        >
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-5">
-              <button
-                onClick={copyTable}
-                className="text-sm border border-ink-700 rounded-md px-3 py-1.5 text-ink-300 hover:text-ink-100"
-              >
-                {copied ? "Copied" : "Copy markdown"}
-              </button>
-              <button
-                onClick={insertTable}
-                className="text-sm bg-accent text-ink-950 font-semibold rounded-md px-3 py-1.5"
-              >
-                Insert into text
-              </button>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
+        )}
+      </PopOver>
     </div>
   );
 }

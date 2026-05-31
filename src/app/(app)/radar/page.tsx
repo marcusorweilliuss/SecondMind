@@ -53,23 +53,46 @@ export default function RadarPage() {
 
   async function refreshRadar() {
     setRefreshing(true);
-    setStatus("Scanning your context, searching, and scoring results…");
+    setStatus("🛰️ reading your context → searching the web → scoring hits…");
     try {
       const res = await fetch("/api/radar/generate", { method: "POST" });
       const d = await res.json();
       if (res.ok) {
-        setStatus(
-          `Surfaced ${d.surfaced} new item${d.surfaced === 1 ? "" : "s"} across ${d.vectors.length} vectors.`
-        );
+        if (d.surfaced > 0) {
+          setStatus(
+            `🎉 found ${d.surfaced} fresh read${d.surfaced === 1 ? "" : "s"} across ${d.vectors.length} topics.`
+          );
+        } else {
+          // Explain why nothing cleared the bar, using the debug breakdown.
+          const dbg = (d.debug ?? []) as Array<Record<string, any>>;
+          const searchErr = dbg.find((x) => x.searchError);
+          const totalCandidates = dbg.reduce(
+            (n, x) => n + (Number(x.candidates) || 0),
+            0
+          );
+          if (searchErr) {
+            setStatus(
+              `⚠️ web search failed (${String(searchErr.searchError).slice(0, 120)}). Check your TAVILY_API_KEY at /api/health.`
+            );
+          } else if (totalCandidates === 0) {
+            setStatus(
+              "🤔 search came back empty for your topics. Try adding a more specific topic under “currently tracking,” or save a few signals first."
+            );
+          } else {
+            setStatus(
+              `🧐 scanned ${totalCandidates} results across ${d.vectors.length} topics, but none cleared the relevance bar. Add richer project context or sharper topics, then refresh.`
+            );
+          }
+        }
         await Promise.all([loadItems(), loadVectors()]);
       } else {
-        setStatus(d.error || "Refresh failed.");
+        setStatus(d.error || "refresh failed.");
       }
     } catch (e) {
       setStatus(String(e));
     } finally {
       setRefreshing(false);
-      setTimeout(() => setStatus(""), 6000);
+      setTimeout(() => setStatus(""), 12000);
     }
   }
 
@@ -121,25 +144,28 @@ export default function RadarPage() {
 
   return (
     <div className="space-y-6 cx-fade">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Radar</h1>
-          <p className="text-ink-400 text-sm mt-1">
-            Proactive research on what you&apos;re working on.
+          <h1 className="text-3xl font-black tracking-tight">
+            Radar <span className="inline-block animate-floaty">📡</span>
+          </h1>
+          <p className="text-ink-400 text-sm mt-1.5">
+            stuff worth reading, hand-picked for whatever you&apos;re into right
+            now.
           </p>
         </div>
         <div className="text-right">
           <button
             onClick={refreshRadar}
             disabled={refreshing}
-            className="bg-accent text-ink-950 text-sm font-semibold rounded-md px-4 py-1.5 disabled:opacity-60"
+            className="bg-accent text-ink-950 text-sm font-bold rounded-full px-5 py-2 disabled:opacity-60 hover:brightness-105 active:scale-95 transition"
           >
-            {refreshing ? "Refreshing…" : "Refresh radar"}
+            {refreshing ? "scanning…" : "🔄 refresh radar"}
           </button>
           <p className="text-xs text-ink-500 mt-1.5">
             {lastUpdated
-              ? `Last updated ${new Date(lastUpdated).toLocaleString()}`
-              : "Not yet run"}
+              ? `updated ${new Date(lastUpdated).toLocaleString()}`
+              : "never run yet"}
           </p>
         </div>
       </div>

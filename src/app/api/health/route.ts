@@ -62,5 +62,33 @@ export async function GET(req: NextRequest) {
     llm = { ok: false, model: MODEL, error: "GROQ_API_KEY not set" };
   }
 
-  return NextResponse.json({ env, authenticated, llm });
+  // Live Tavily ping (used by Radar).
+  let tavily: { ok: boolean; status?: number; results?: number; error?: string } = {
+    ok: false,
+  };
+  if (env.TAVILY_API_KEY) {
+    try {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: process.env.TAVILY_API_KEY,
+          query: "test",
+          max_results: 1,
+        }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        tavily = { ok: true, status: res.status, results: (d.results ?? []).length };
+      } else {
+        tavily = { ok: false, status: res.status, error: (await res.text()).slice(0, 400) };
+      }
+    } catch (e) {
+      tavily = { ok: false, error: String(e).slice(0, 400) };
+    }
+  } else {
+    tavily = { ok: false, error: "TAVILY_API_KEY not set" };
+  }
+
+  return NextResponse.json({ env, authenticated, llm, tavily });
 }

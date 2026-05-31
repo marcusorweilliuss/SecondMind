@@ -81,16 +81,18 @@ export default function ProjectsPage() {
     <div className="cx-fade">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold">Projects</h1>
-          <p className="text-ink-400 text-sm mt-1">
-            Every signal, filed and connected.
+          <h1 className="text-3xl font-black tracking-tight">
+            Projects <span className="inline-block animate-floaty">🗂️</span>
+          </h1>
+          <p className="text-ink-400 text-sm mt-1.5">
+            every highlight you saved, filed and connected like flashcards.
           </p>
         </div>
         <button
           onClick={() => setShowNew((v) => !v)}
-          className="text-sm border border-ink-700 rounded-md px-3 py-1.5 text-ink-300 hover:text-ink-100"
+          className="text-sm font-bold border border-ink-700 hover:border-accent rounded-full px-4 py-2 text-ink-200 hover:text-accent transition"
         >
-          + New project
+          + new project
         </button>
       </div>
 

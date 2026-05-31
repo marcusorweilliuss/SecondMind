@@ -50,17 +50,19 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm cx-fade">
         <div className="mb-8 text-center">
-          <h1 className="font-mono font-bold tracking-[0.22em] text-accent text-lg">
-            CORTEX
+          <div className="text-5xl mb-2 animate-floaty">🧠</div>
+          <h1 className="font-black tracking-tight text-accent text-2xl">
+            cortex
           </h1>
           <p className="text-ink-400 text-sm mt-2">
-            A personal cognition layer for what you read and write.
+            your second brain for reading & writing. like a study buddy that
+            actually paid attention. ✨
           </p>
         </div>
 
         <form
           onSubmit={submit}
-          className="bg-ink-900 border border-ink-800 rounded-xl p-6 space-y-4"
+          className="bg-ink-900 border border-ink-800 rounded-3xl p-6 space-y-4"
         >
           <div>
             <label className="block text-xs uppercase tracking-wider text-ink-400 mb-1.5">
@@ -95,13 +97,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-accent text-ink-950 font-semibold rounded-md py-2 text-sm disabled:opacity-60"
+            className="w-full bg-accent text-ink-950 font-bold rounded-full py-2.5 text-sm disabled:opacity-60 hover:brightness-105 active:scale-95 transition"
           >
             {loading
-              ? "Working…"
+              ? "working…"
               : mode === "signin"
-                ? "Sign in"
-                : "Create account"}
+                ? "let's go →"
+                : "make my brain 🧠"}
           </button>
 
           <p className="text-center text-xs text-ink-500">
