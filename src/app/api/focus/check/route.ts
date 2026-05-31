@@ -93,19 +93,35 @@ export async function POST(req: NextRequest) {
     { temperature: 0.2, maxOutputTokens: 400 }
   );
 
-  // Attach the note id when a contradiction references one.
+  // Resolve the contradiction against the ACTUAL stored note. The model can
+  // claim found=true while leaving note_text empty or citing a note that
+  // doesn't exist — only surface a contradiction that's backed by a real note.
   let noteId: string | null = null;
+  let noteText = "";
   if (
     result.contradiction?.found &&
     typeof result.contradiction.note_index === "number" &&
     notes
   ) {
     const idx = result.contradiction.note_index - 1;
-    if (idx >= 0 && idx < notes.length) noteId = notes[idx].id;
+    if (idx >= 0 && idx < notes.length) {
+      noteId = notes[idx].id;
+      noteText = notes[idx].content; // authoritative source
+    }
   }
+
+  const contradiction = noteText
+    ? {
+        found: true,
+        note_index: result.contradiction.note_index,
+        claim: result.contradiction.claim ?? "",
+        note_text: noteText,
+        note_id: noteId,
+      }
+    : { found: false, note_index: null, claim: "", note_text: "", note_id: null };
 
   return NextResponse.json({
     drift: result.drift,
-    contradiction: { ...result.contradiction, note_id: noteId },
+    contradiction,
   });
 }

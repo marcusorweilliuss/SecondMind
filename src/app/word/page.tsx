@@ -21,7 +21,7 @@ type Project = { id: string; name: string };
 
 type Popup =
   | { kind: "drift"; reason: string }
-  | { kind: "fact"; note_text: string }
+  | { kind: "fact"; note_text: string; claim: string }
   | { kind: "table"; table: TableResult }
   | null;
 
@@ -164,9 +164,13 @@ export default function WordPanel() {
         return;
       }
       const d = await res.json();
-      if (d.contradiction?.found) {
+      if (d.contradiction?.found && d.contradiction.note_text) {
         setStatusLine(`🔍 found a possible factual conflict · ${words} words`);
-        tryOpen({ kind: "fact", note_text: d.contradiction.note_text });
+        tryOpen({
+          kind: "fact",
+          note_text: d.contradiction.note_text,
+          claim: d.contradiction.claim || "",
+        });
       } else if (d.drift?.off_track) {
         setStatusLine(`🧭 looks off-track · ${words} words`);
         tryOpen({ kind: "drift", reason: d.drift.reason });
@@ -469,12 +473,22 @@ export default function WordPanel() {
         }
       >
         {popup?.kind === "fact" && (
-          <p className="text-xs text-ink-300 text-center">
-            Your note says{" "}
-            <span className="bg-coral/20 text-coral px-1 rounded">
-              “{popup.note_text}”
-            </span>
-          </p>
+          <div className="text-xs text-ink-300 text-center space-y-2">
+            {popup.claim && (
+              <p>
+                You wrote{" "}
+                <span className="bg-ink-800 text-ink-100 px-1 rounded">
+                  “{popup.claim}”
+                </span>
+              </p>
+            )}
+            <p>
+              but your note says{" "}
+              <span className="bg-coral/20 text-coral px-1 rounded">
+                “{popup.note_text}”
+              </span>
+            </p>
+          </div>
         )}
       </PopOver>
 

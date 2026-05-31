@@ -20,7 +20,7 @@ type TableResult = {
 
 type Popup =
   | { kind: "drift"; reason: string }
-  | { kind: "fact"; note_text: string }
+  | { kind: "fact"; note_text: string; claim: string }
   | { kind: "table"; table: TableResult }
   | null;
 
@@ -145,8 +145,12 @@ export default function FocusPage() {
         body: JSON.stringify({ writing: text }),
       });
       const d = await res.json();
-      if (d.contradiction?.found) {
-        tryOpen({ kind: "fact", note_text: d.contradiction.note_text });
+      if (d.contradiction?.found && d.contradiction.note_text) {
+        tryOpen({
+          kind: "fact",
+          note_text: d.contradiction.note_text,
+          claim: d.contradiction.claim || "",
+        });
       } else if (d.drift?.off_track) {
         tryOpen({ kind: "drift", reason: d.drift.reason });
       }
@@ -376,12 +380,22 @@ export default function FocusPage() {
         }
       >
         {popup?.kind === "fact" && (
-          <p className="text-sm text-ink-300 text-center leading-relaxed">
-            Your earlier note says{" "}
-            <span className="bg-coral/20 text-coral px-1 rounded">
-              “{popup.note_text}”
-            </span>
-          </p>
+          <div className="text-sm text-ink-300 text-center leading-relaxed space-y-2">
+            {popup.claim && (
+              <p>
+                You wrote{" "}
+                <span className="bg-ink-800 text-ink-100 px-1 rounded">
+                  “{popup.claim}”
+                </span>
+              </p>
+            )}
+            <p>
+              but your earlier note says{" "}
+              <span className="bg-coral/20 text-coral px-1 rounded">
+                “{popup.note_text}”
+              </span>
+            </p>
+          </div>
         )}
       </PopOver>
 
