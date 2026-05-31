@@ -13,12 +13,13 @@ Four behaviours:
 3. **Auto-table** (web) — pause while writing and Cortex offers to turn
    comparison-shaped prose into a table.
 4. **Radar** (web) — proactive research: derive interest vectors from your
-   work, search Tavily (recent + foundational), score with Gemini, and surface
+   work, search Tavily (recent + foundational), score them, and surface
    only what clears the bar.
 
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript + Tailwind
+- AI: Groq (OpenAI-compatible Chat Completions, free tier) via `src/lib/llm.ts`
 - Supabase (PostgreSQL + Auth)
 - Google Gemini 1.5 Flash (REST) for all AI calls
 - Tavily for Radar search
@@ -37,7 +38,7 @@ npm install
 Copy `.env.local.example` to `.env.local` and fill in:
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `GEMINI_API_KEY`
+- `GROQ_API_KEY` (free, no billing — https://console.groq.com/keys)
 - `TAVILY_API_KEY`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT` (Gmail OAuth)
 
@@ -111,8 +112,8 @@ What the panel does:
 
 ## AI calls
 
-All Gemini calls are live (no stubs) and routed through `src/lib/gemini.ts`,
-each with an explicit system prompt:
+All AI calls are live (no stubs) and routed through `src/lib/llm.ts`
+(Groq Chat Completions), each with an explicit system prompt:
 
 - `api/signals` — summarise highlight + name connection
 - `api/focus/check` — drift detection + contradiction against notes

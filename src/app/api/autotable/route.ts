@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { geminiJSON } from "@/lib/gemini";
+import { llmJSON } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ is_table: false });
   }
 
-  const result = await geminiJSON<{
+  const result = await llmJSON<{
     is_table: boolean;
     headers: string[];
     rows: string[][];

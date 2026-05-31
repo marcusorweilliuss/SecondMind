@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
-import { geminiJSON } from "@/lib/gemini";
+import { llmJSON } from "@/lib/llm";
 import { tavilySearch, type TavilyResult } from "@/lib/tavily";
 
 export const runtime = "nodejs";
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   ].join("\n");
 
   // 2. Extract 5-8 interest vectors with Gemini.
-  const { vectors: autoVectors } = await geminiJSON<{ vectors: string[] }>(
+  const { vectors: autoVectors } = await llmJSON<{ vectors: string[] }>(
     VECTOR_SYSTEM,
     contextText,
     { temperature: 0.4, maxOutputTokens: 400 }
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
 
     let scored: { items: ScoredItem[] };
     try {
-      scored = await geminiJSON<{ items: ScoredItem[] }>(
+      scored = await llmJSON<{ items: ScoredItem[] }>(
         SCORE_SYSTEM,
         `CURRENT WORK:\n${contextText}\n\nINTEREST VECTOR: ${vector}\n\nRESULTS:\n${resultList}`,
         { temperature: 0.3, maxOutputTokens: 2000 }

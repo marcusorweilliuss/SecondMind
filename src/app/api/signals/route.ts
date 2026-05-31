@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
-import { geminiGenerate, geminiJSON } from "@/lib/gemini";
+import { llmGenerate, llmJSON } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const db = createServiceSupabase();
 
   // (a) Summarise the highlight.
-  const signalSummary = await geminiGenerate(
+  const signalSummary = await llmGenerate(
     SUMMARY_SYSTEM,
     `Highlight:\n"""${highlight}"""\n\nSource: ${body.source_title || "unknown"} (${body.source_url || "n/a"})`,
     { temperature: 0.2, maxOutputTokens: 120 }
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       .map((it, i) => `${i + 1}. [${it.kind}] ${it.text}`)
       .join("\n");
     try {
-      const result = await geminiJSON<{
+      const result = await llmJSON<{
         connected_index: number | null;
         connection: string;
       }>(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
-import { geminiJSON } from "@/lib/gemini";
+import { llmJSON } from "@/lib/llm";
 
 export const runtime = "nodejs";
 
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     .map((n, i) => `${i + 1}. ${n.content}`)
     .join("\n");
 
-  const result = await geminiJSON<{
+  const result = await llmJSON<{
     drift: { off_track: boolean; reason: string };
     contradiction: {
       found: boolean;
