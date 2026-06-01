@@ -141,9 +141,13 @@ export default function FocusPage() {
   }
 
   // Behaviour 2: drift + fact guard every 30s
-  const runFocusCheck = useCallback(async () => {
+  const lastCheckedText = useRef("");
+  const runFocusCheck = useCallback(async (force = false) => {
     const text = writingRef.current.trim();
     if (text.length < 20) return;
+    // Skip re-checking unchanged text so the 30s loop doesn't burn API quota.
+    if (force !== true && text === lastCheckedText.current) return;
+    lastCheckedText.current = text;
     setChecking(true);
     try {
       const res = await fetch("/api/focus/check", {
@@ -311,7 +315,7 @@ export default function FocusPage() {
               {wordCount} words
             </span>
             <button
-              onClick={runFocusCheck}
+              onClick={() => runFocusCheck(true)}
               className="text-xs font-medium text-accent hover:text-accent-soft"
             >
               check me now ⚡

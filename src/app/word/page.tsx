@@ -213,7 +213,8 @@ export default function WordPanel() {
   }, []);
 
   // --- Behaviour 2: drift + fact guard -----------------------------------
-  const runFocusCheck = useCallback(async () => {
+  const lastCheckedText = useRef("");
+  const runFocusCheck = useCallback(async (force = false) => {
     if (!tokenRef.current) return;
     const text = (await readDocText()).trim();
     const words = text ? text.split(/\s+/).length : 0;
@@ -221,6 +222,10 @@ export default function WordPanel() {
       setStatusLine("✍️ write a bit more and I'll start checking…");
       return;
     }
+    // Don't burn API quota re-checking unchanged text (the 30s loop would
+    // otherwise call on every tick forever). Manual "check now" forces it.
+    if (force !== true && text === lastCheckedText.current) return;
+    lastCheckedText.current = text;
     setChecking(true);
     setStatusLine("🧠 reading your draft…");
     try {
@@ -265,10 +270,13 @@ export default function WordPanel() {
   }, [readDocText, tryOpen, authedFetch]);
 
   // --- Behaviour 3: auto-table -------------------------------------------
+  const lastTableText = useRef("");
   const runAutoTable = useCallback(async () => {
     if (!tokenRef.current) return;
     const text = (await readDocText()).trim();
     if (text.split(/\s+/).length < 25) return;
+    if (text === lastTableText.current) return; // skip unchanged text
+    lastTableText.current = text;
     try {
       const res = await authedFetch("/api/autotable", {
         method: "POST",
@@ -501,7 +509,7 @@ export default function WordPanel() {
 
       <div className="flex gap-2">
         <button
-          onClick={runFocusCheck}
+          onClick={() => runFocusCheck(true)}
           disabled={checking || !officeReady}
           className="flex-1 text-xs font-medium border border-ink-700 rounded-full px-2 py-2 text-ink-200 hover:text-ink-100 disabled:opacity-50"
         >
