@@ -42,15 +42,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ is_table: false });
   }
 
-  const result = await llmJSON<{
+  let result: {
     is_table: boolean;
     headers: string[];
     rows: string[][];
     markdown: string;
-  }>(SYSTEM, `PASSAGE:\n"""${passage}"""`, {
-    temperature: 0.2,
-    maxOutputTokens: 700,
-  });
+  };
+  try {
+    result = await llmJSON(SYSTEM, `PASSAGE:\n"""${passage}"""`, {
+      temperature: 0.2,
+      maxOutputTokens: 700,
+    });
+  } catch {
+    // Transient LLM error — just say "no table" rather than 500.
+    return NextResponse.json({ is_table: false, skipped: true });
+  }
 
   if (!result.is_table) return NextResponse.json({ is_table: false });
 

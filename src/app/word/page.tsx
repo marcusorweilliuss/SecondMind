@@ -234,6 +234,14 @@ export default function WordPanel() {
         return;
       }
       const d = await res.json();
+      if (d.skipped) {
+        setStatusLine(
+          d.reason === "rate_limited"
+            ? "⏳ busy (rate limit) — will retry shortly"
+            : `✍️ ${words} words`
+        );
+        return;
+      }
       if (d.contradiction?.found && d.contradiction.note_text) {
         setStatusLine(`🔍 found a possible factual conflict · ${words} words`);
         tryOpen({
@@ -304,7 +312,8 @@ export default function WordPanel() {
       if (
         lastChange.current &&
         now - lastChange.current >= 3000 &&
-        lastChange.current > lastScan.current
+        lastChange.current > lastScan.current &&
+        now - lastScan.current >= 15000 // throttle: at most one auto-scan / 15s
       ) {
         lastScan.current = now;
         runFocusCheck();

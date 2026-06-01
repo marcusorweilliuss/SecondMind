@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     .map((n, i) => `${i + 1}. ${n.content}`)
     .join("\n");
 
-  const result = await llmJSON<{
+  let result: {
     drift: { off_track: boolean; reason: string };
     contradiction: {
       found: boolean;
@@ -88,11 +88,24 @@ export async function POST(req: NextRequest) {
       claim: string;
       note_text: string;
     };
-  }>(
-    SYSTEM,
-    `TASK:\n${taskText}\n\nWRITING:\n"""${writing}"""\n\nNOTES:\n${noteList || "(none)"}`,
-    { temperature: 0.2, maxOutputTokens: 400 }
-  );
+  };
+  try {
+    result = await llmJSON(
+      SYSTEM,
+      `TASK:\n${taskText}\n\nWRITING:\n"""${writing}"""\n\nNOTES:\n${noteList || "(none)"}`,
+      { temperature: 0.2, maxOutputTokens: 400 }
+    );
+  } catch (e) {
+    // Don't hard-fail the writing surface on a transient LLM error (e.g. a
+    // Groq rate-limit). Return a quiet all-clear with a soft note instead.
+    const rateLimited = /\b429\b|rate/i.test(String(e));
+    return NextResponse.json({
+      drift: { off_track: false, reason: "" },
+      contradiction: { found: false, note_index: null, claim: "", note_text: "" },
+      skipped: true,
+      reason: rateLimited ? "rate_limited" : "llm_error",
+    });
+  }
 
   // Resolve the contradiction against the ACTUAL stored note. The model can
   // claim found=true while leaving note_text empty or citing a note that
