@@ -51,15 +51,82 @@ export default function WordPanel() {
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [signalMsg, setSignalMsg] = useState("");
+  const [projectsError, setProjectsError] = useState("");
 
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
+  const refreshRef = useRef<string | null>(null);
   const popupRef = useRef<Popup>(null);
   popupRef.current = popup;
 
   const tryOpen = useCallback((p: Popup) => {
     if (!popupRef.current) setPopup(p);
   }, []);
+
+  // Exchange the refresh token for a fresh access token (Supabase tokens
+  // expire after ~1h). Returns the new access token, or null on failure.
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+    const rt = refreshRef.current || localStorage.getItem("cortex_word_refresh");
+    if (!rt) return null;
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ refresh_token: rt }),
+        }
+      );
+      if (!res.ok) return null;
+      const d = await res.json();
+      localStorage.setItem("cortex_word_token", d.access_token);
+      localStorage.setItem("cortex_word_refresh", d.refresh_token);
+      refreshRef.current = d.refresh_token;
+      tokenRef.current = d.access_token;
+      setToken(d.access_token);
+      return d.access_token;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // fetch() with the current Bearer token; on 401, refresh once and retry.
+  const authedFetch = useCallback(
+    async (input: string, init: RequestInit = {}): Promise<Response> => {
+      const withAuth = (tok: string): RequestInit => ({
+        ...init,
+        headers: { ...(init.headers || {}), Authorization: `Bearer ${tok}` },
+      });
+      let res = await fetch(input, withAuth(tokenRef.current || ""));
+      if (res.status === 401) {
+        const fresh = await refreshAccessToken();
+        if (fresh) res = await fetch(input, withAuth(fresh));
+      }
+      return res;
+    },
+    [refreshAccessToken]
+  );
+
+  const loadProjects = useCallback(async () => {
+    setProjectsError("");
+    try {
+      const res = await authedFetch("/api/projects");
+      if (res.status === 401) {
+        setProjectsError("session expired — sign out and back in");
+        return;
+      }
+      if (!res.ok) {
+        setProjectsError(`couldn't load projects (${res.status})`);
+        return;
+      }
+      const d = await res.json();
+      setProjects(d.projects ?? []);
+      const saved = localStorage.getItem("cortex_word_project");
+      if (saved) setActiveProject(saved);
+    } catch {
+      setProjectsError("couldn't reach the server");
+    }
+  }, [authedFetch]);
 
   // 1. Load Office.js once.
   useEffect(() => {
@@ -84,20 +151,15 @@ export default function WordPanel() {
 
   useEffect(() => {
     const saved = localStorage.getItem("cortex_word_token");
+    const savedRefresh = localStorage.getItem("cortex_word_refresh");
+    if (savedRefresh) refreshRef.current = savedRefresh;
     if (saved) setToken(saved);
   }, []);
 
   useEffect(() => {
     if (!token) return;
-    fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((d) => {
-        setProjects(d.projects ?? []);
-        const saved = localStorage.getItem("cortex_word_project");
-        if (saved) setActiveProject(saved);
-      })
-      .catch(() => {});
-  }, [token]);
+    loadProjects();
+  }, [token, loadProjects]);
 
   // --- Auth ---------------------------------------------------------------
   async function signIn(e: React.FormEvent) {
@@ -116,6 +178,8 @@ export default function WordPanel() {
       }
       const d = await res.json();
       localStorage.setItem("cortex_word_token", d.access_token);
+      localStorage.setItem("cortex_word_refresh", d.refresh_token);
+      refreshRef.current = d.refresh_token;
       setToken(d.access_token);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Sign-in failed.");
@@ -126,6 +190,8 @@ export default function WordPanel() {
 
   function signOut() {
     localStorage.removeItem("cortex_word_token");
+    localStorage.removeItem("cortex_word_refresh");
+    refreshRef.current = null;
     setToken(null);
     setProjects([]);
   }
@@ -158,12 +224,9 @@ export default function WordPanel() {
     setChecking(true);
     setStatusLine("🧠 reading your draft…");
     try {
-      const res = await fetch("/api/focus/check", {
+      const res = await authedFetch("/api/focus/check", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenRef.current}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ writing: text }),
       });
       if (!res.ok) {
@@ -191,7 +254,7 @@ export default function WordPanel() {
     } finally {
       setChecking(false);
     }
-  }, [readDocText, tryOpen]);
+  }, [readDocText, tryOpen, authedFetch]);
 
   // --- Behaviour 3: auto-table -------------------------------------------
   const runAutoTable = useCallback(async () => {
@@ -199,12 +262,9 @@ export default function WordPanel() {
     const text = (await readDocText()).trim();
     if (text.split(/\s+/).length < 25) return;
     try {
-      const res = await fetch("/api/autotable", {
+      const res = await authedFetch("/api/autotable", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenRef.current}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
       const d: TableResult = await res.json();
@@ -212,7 +272,7 @@ export default function WordPanel() {
     } catch {
       /* ignore */
     }
-  }, [readDocText, tryOpen]);
+  }, [readDocText, tryOpen, authedFetch]);
 
   // Run once as soon as Word + auth are ready.
   useEffect(() => {
@@ -299,12 +359,9 @@ export default function WordPanel() {
         }
         setSignalMsg("saving…");
         try {
-          const res = await fetch("/api/signals", {
+          const res = await authedFetch("/api/signals", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${tokenRef.current}`,
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               highlight_text: text,
               source_title: "Microsoft Word",
@@ -397,9 +454,17 @@ export default function WordPanel() {
 
       {/* Active project + signal capture */}
       <div className="space-y-2">
-        <label className="block text-[10px] uppercase tracking-wider text-ink-400">
-          Active project
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="block text-[10px] uppercase tracking-wider text-ink-400">
+            Active project
+          </label>
+          <button
+            onClick={loadProjects}
+            className="text-[10px] text-ink-500 hover:text-accent"
+          >
+            ↻ reload
+          </button>
+        </div>
         <select
           value={activeProject}
           onChange={(e) => {
@@ -415,6 +480,14 @@ export default function WordPanel() {
             </option>
           ))}
         </select>
+        {projectsError && (
+          <p className="text-[11px] text-coral">{projectsError}</p>
+        )}
+        {!projectsError && projects.length === 0 && (
+          <p className="text-[11px] text-ink-500">
+            No projects yet — create one in the Cortex web app, then hit reload.
+          </p>
+        )}
       </div>
 
       <div className="flex gap-2">
