@@ -368,6 +368,48 @@ export default function WordPanel() {
     }
   }, []);
 
+  // Swap a flagged sentence for the suggested correction in the Word doc (opt-in).
+  const useSuggestionInWord = useCallback(
+    async (r: FactResult) => {
+      if (!r.correction) return;
+      const docText = await readDocText();
+      const span = locateClaim(docText, r.quote || r.claim || "");
+      if (!span) {
+        setSignalMsg("couldn't find that sentence to swap");
+        setTimeout(() => setSignalMsg(""), 3000);
+        return;
+      }
+      const sentence = docText.slice(span.start, span.end);
+      const chunks = chunkForWordSearch(sentence);
+      if (chunks.length !== 1) {
+        setSignalMsg("that sentence is too long to swap automatically");
+        setTimeout(() => setSignalMsg(""), 3000);
+        return;
+      }
+      try {
+        await window.Word.run(async (context: any) => {
+          const search = context.document.body.search(chunks[0], {
+            matchCase: false,
+            ignorePunct: true,
+          });
+          search.load("items");
+          await context.sync();
+          if (search.items.length) {
+            const range = search.items[0];
+            range.insertText(r.correction, "Replace");
+            range.font.highlightColor = null;
+          }
+          await context.sync();
+        });
+        setFactResults((prev) => (prev ? prev.filter((x) => x !== r) : prev));
+      } catch {
+        setSignalMsg("couldn't swap that sentence");
+        setTimeout(() => setSignalMsg(""), 3000);
+      }
+    },
+    [readDocText]
+  );
+
   // Deep fact-check against notes + the web (on demand).
   const runFactCheck = useCallback(async () => {
     if (!tokenRef.current) return;
@@ -679,7 +721,12 @@ export default function WordPanel() {
               </p>
               <div className="space-y-2">
                 {factResults.map((r, i) => (
-                  <FactResultCard key={i} r={r} compact />
+                  <FactResultCard
+                    key={i}
+                    r={r}
+                    compact
+                    onUseSuggestion={useSuggestionInWord}
+                  />
                 ))}
               </div>
             </>

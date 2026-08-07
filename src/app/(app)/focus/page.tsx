@@ -266,6 +266,19 @@ export default function FocusPage() {
     }
   }
 
+  // Swap a flagged sentence for the suggested correction (opt-in).
+  function useSuggestion(r: FactResult) {
+    const text = writingRef.current;
+    const span = locateClaim(text, r.quote || r.claim || "");
+    if (!span || !r.correction) return;
+    const next = text.slice(0, span.start) + r.correction + text.slice(span.end);
+    setWriting(next);
+    setFactCheckedText(next);
+    setWordCount(next.trim() ? next.trim().split(/\s+/).length : 0);
+    // Drop the applied finding; the rest re-locate against the new text.
+    setFactResults((prev) => (prev ? prev.filter((x) => x !== r) : prev));
+  }
+
   // Behaviour 3: auto-table after a 3s pause
   const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function onWritingChange(value: string) {
@@ -649,7 +662,7 @@ export default function FocusPage() {
             {!factChecking && factResults && factResults.length > 0 && (
               <div className="space-y-2.5">
                 {factResults.map((r, i) => (
-                  <FactResultCard key={i} r={r} />
+                  <FactResultCard key={i} r={r} onUseSuggestion={useSuggestion} />
                 ))}
               </div>
             )}

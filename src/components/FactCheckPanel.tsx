@@ -34,7 +34,15 @@ const STYLE: Record<
   },
 };
 
-export function FactResultCard({ r, compact }: { r: FactResult; compact?: boolean }) {
+export function FactResultCard({
+  r,
+  compact,
+  onUseSuggestion,
+}: {
+  r: FactResult;
+  compact?: boolean;
+  onUseSuggestion?: (r: FactResult) => void;
+}) {
   const s = STYLE[r.verdict] ?? STYLE.unverifiable;
   return (
     <div className={`bg-ink-850 border ${s.ring} rounded-2xl p-3 text-left`}>
@@ -59,11 +67,19 @@ export function FactResultCard({ r, compact }: { r: FactResult; compact?: boolea
           {r.verdict === "inaccurate" && r.correction && (
             <div className="mt-2 bg-grass/10 border border-grass/25 rounded-lg px-2.5 py-1.5">
               <span className="text-[10px] uppercase tracking-wider text-grass font-bold">
-                correction
+                suggested
               </span>
               <p className={`${compact ? "text-[11px]" : "text-xs"} text-ink-100 mt-0.5`}>
                 {r.correction}
               </p>
+              {onUseSuggestion && (
+                <button
+                  onClick={() => onUseSuggestion(r)}
+                  className="mt-1.5 text-[11px] font-semibold text-grass hover:underline"
+                >
+                  use this instead →
+                </button>
+              )}
             </div>
           )}
           {r.source && (
