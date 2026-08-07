@@ -38,10 +38,12 @@ export function FactResultCard({
   r,
   compact,
   onUseSuggestion,
+  onDismiss,
 }: {
   r: FactResult;
   compact?: boolean;
   onUseSuggestion?: (r: FactResult) => void;
+  onDismiss?: (r: FactResult) => void;
 }) {
   const s = STYLE[r.verdict] ?? STYLE.unverifiable;
   return (
@@ -55,6 +57,14 @@ export function FactResultCard({
             >
               {s.label}
             </span>
+            {onDismiss && (
+              <button
+                onClick={() => onDismiss(r)}
+                className="ml-auto text-[11px] text-ink-500 hover:text-ink-300"
+              >
+                dismiss
+              </button>
+            )}
           </div>
           <p className={`${compact ? "text-xs" : "text-sm"} text-ink-100 leading-snug`}>
             {r.claim}

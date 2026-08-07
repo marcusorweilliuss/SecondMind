@@ -726,6 +726,11 @@ export default function WordPanel() {
                     r={r}
                     compact
                     onUseSuggestion={useSuggestionInWord}
+                    onDismiss={(x) =>
+                      setFactResults((prev) =>
+                        prev ? prev.filter((y) => y !== x) : prev
+                      )
+                    }
                   />
                 ))}
               </div>

@@ -662,7 +662,16 @@ export default function FocusPage() {
             {!factChecking && factResults && factResults.length > 0 && (
               <div className="space-y-2.5">
                 {factResults.map((r, i) => (
-                  <FactResultCard key={i} r={r} onUseSuggestion={useSuggestion} />
+                  <FactResultCard
+                    key={i}
+                    r={r}
+                    onUseSuggestion={useSuggestion}
+                    onDismiss={(x) =>
+                      setFactResults((prev) =>
+                        prev ? prev.filter((y) => y !== x) : prev
+                      )
+                    }
+                  />
                 ))}
               </div>
             )}
