@@ -29,3 +29,6 @@ next-env.d.ts
 
 # extension build
 extension/*.zip
+
+# accidental nested clone
+/SecondMind/
