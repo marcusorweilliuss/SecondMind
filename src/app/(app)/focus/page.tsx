@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
+import { locateClaim } from "@/lib/highlight";
 
 type DriftResult = { off_track: boolean; reason: string };
 type ContradictionResult = {
@@ -49,14 +50,12 @@ function escapeHtml(s: string): string {
 // <mark> so it shows behind the (transparent-bg) textarea text.
 function buildHighlightHtml(text: string, results: FactResult[]): string {
   type Range = { start: number; end: number; verdict: string };
-  const lower = text.toLowerCase();
   const ranges: Range[] = [];
   for (const r of results) {
-    const q = (r.quote || "").trim();
-    if (q.length < 4) continue;
-    const idx = lower.indexOf(q.toLowerCase());
-    if (idx === -1) continue;
-    ranges.push({ start: idx, end: idx + q.length, verdict: r.verdict });
+    // Locate the best-matching sentence — robust to the AI rewording the quote.
+    const span = locateClaim(text, r.quote || r.claim || "");
+    if (!span) continue;
+    ranges.push({ start: span.start, end: span.end, verdict: r.verdict });
   }
   ranges.sort((a, b) => a.start - b.start);
   // Drop overlaps (keep the earliest).

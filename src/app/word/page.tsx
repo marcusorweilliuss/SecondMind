@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
+import { locateClaim, chunkForWordSearch } from "@/lib/highlight";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -297,39 +298,52 @@ export default function WordPanel() {
     }
   }, [readDocText, tryOpen, authedFetch]);
 
-  // Highlight the flagged sentences directly in the Word document.
+  // Highlight the flagged sentences directly in the Word document. We locate
+  // the actual sentence in the doc (robust to reworded quotes), then highlight
+  // it in paragraph- and length-safe chunks so Word's search can find them.
   const highlightedQuotes = useRef<string[]>([]);
-  const highlightInWord = useCallback(async (results: FactResult[]) => {
-    const colorFor = (v: string) =>
-      v === "inaccurate" ? "#FFC7CE" : v === "unverifiable" ? "#FFEB9C" : "#C6EFCE";
-    const quotes: string[] = [];
-    try {
-      await window.Word.run(async (context: any) => {
-        for (const r of results) {
-          const q = (r.quote || "").trim();
-          if (q.length < 4 || q.length > 250) continue;
-          try {
-            const search = context.document.body.search(q, {
-              matchCase: false,
-              ignorePunct: true,
-            });
-            search.load("items");
-            await context.sync();
-            for (const item of search.items) {
-              item.font.highlightColor = colorFor(r.verdict);
-            }
-            if (search.items.length) quotes.push(q);
-          } catch {
-            /* skip quotes Word can't search (too long / special chars) */
-          }
+  const highlightInWord = useCallback(
+    async (results: FactResult[], docText: string) => {
+      const colorFor = (v: string) =>
+        v === "inaccurate" ? "#FFC7CE" : v === "unverifiable" ? "#FFEB9C" : "#C6EFCE";
+      const chunks: { text: string; color: string }[] = [];
+      for (const r of results) {
+        const span = locateClaim(docText, r.quote || r.claim || "");
+        if (!span) continue;
+        const sentence = docText.slice(span.start, span.end);
+        for (const c of chunkForWordSearch(sentence)) {
+          chunks.push({ text: c, color: colorFor(r.verdict) });
         }
-        await context.sync();
-      });
-      highlightedQuotes.current = quotes;
-    } catch {
-      /* ignore */
-    }
-  }, []);
+      }
+      if (chunks.length === 0) return;
+      const done: string[] = [];
+      try {
+        await window.Word.run(async (context: any) => {
+          for (const c of chunks) {
+            try {
+              const search = context.document.body.search(c.text, {
+                matchCase: false,
+                ignorePunct: true,
+              });
+              search.load("items");
+              await context.sync();
+              for (const item of search.items) {
+                item.font.highlightColor = c.color;
+              }
+              if (search.items.length) done.push(c.text);
+            } catch {
+              /* skip a chunk Word can't search */
+            }
+          }
+          await context.sync();
+        });
+        highlightedQuotes.current = done;
+      } catch {
+        /* ignore */
+      }
+    },
+    []
+  );
 
   const clearWordHighlights = useCallback(async () => {
     if (!highlightedQuotes.current.length) return;
@@ -378,7 +392,7 @@ export default function WordPanel() {
       const results: FactResult[] = d.results ?? [];
       setFactResults(results);
       setFactMessage(d.message || "");
-      if (results.length) highlightInWord(results);
+      if (results.length) highlightInWord(results, text);
     } catch {
       setFactMessage("Couldn't run the fact-check — try again.");
     } finally {
