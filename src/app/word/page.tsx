@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
+import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -52,6 +53,12 @@ export default function WordPanel() {
   const [copied, setCopied] = useState(false);
   const [signalMsg, setSignalMsg] = useState("");
   const [projectsError, setProjectsError] = useState("");
+
+  // Deep fact-check (notes + web)
+  const [factChecking, setFactChecking] = useState(false);
+  const [factResults, setFactResults] = useState<FactResult[] | null>(null);
+  const [factMessage, setFactMessage] = useState("");
+  const [showFacts, setShowFacts] = useState(false);
 
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
@@ -290,6 +297,35 @@ export default function WordPanel() {
     }
   }, [readDocText, tryOpen, authedFetch]);
 
+  // Deep fact-check against notes + the web (on demand).
+  const runFactCheck = useCallback(async () => {
+    if (!tokenRef.current) return;
+    const text = (await readDocText()).trim();
+    setShowFacts(true);
+    if (text.length < 20) {
+      setFactResults(null);
+      setFactMessage("Write a bit more to fact-check.");
+      return;
+    }
+    setFactChecking(true);
+    setFactResults(null);
+    setFactMessage("");
+    try {
+      const res = await authedFetch("/api/factcheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setFactResults(d.results ?? []);
+      setFactMessage(d.message || "");
+    } catch {
+      setFactMessage("Couldn't run the fact-check — try again.");
+    } finally {
+      setFactChecking(false);
+    }
+  }, [readDocText, authedFetch]);
+
   // Run once as soon as Word + auth are ready.
   useEffect(() => {
     if (officeReady && token) runFocusCheck();
@@ -523,7 +559,44 @@ export default function WordPanel() {
           💾 save highlight
         </button>
       </div>
+      <button
+        onClick={runFactCheck}
+        disabled={factChecking || !officeReady}
+        className="w-full text-xs font-bold bg-sky/15 text-sky rounded-full px-2 py-2 hover:bg-sky/25 disabled:opacity-60"
+      >
+        {factChecking ? "fact-checking…" : "🔎 fact-check against the web"}
+      </button>
       {signalMsg && <p className="text-[11px] text-ink-400">{signalMsg}</p>}
+
+      {/* Fact-check results */}
+      {showFacts && (
+        <div className="bg-ink-900 border border-sky/30 rounded-2xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-sky">🔎 Fact-check</span>
+            <button
+              onClick={() => setShowFacts(false)}
+              className="text-[11px] text-ink-500 hover:text-ink-300"
+            >
+              hide
+            </button>
+          </div>
+          {factChecking && (
+            <p className="text-[11px] text-ink-400">
+              extracting claims → searching → verifying…
+            </p>
+          )}
+          {!factChecking && factMessage && (!factResults || factResults.length === 0) && (
+            <p className="text-[11px] text-ink-300">{factMessage}</p>
+          )}
+          {!factChecking && factResults && factResults.length > 0 && (
+            <div className="space-y-2">
+              {factResults.map((r, i) => (
+                <FactResultCard key={i} r={r} compact />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pop-ups (centered within the task pane) */}
       <PopOver

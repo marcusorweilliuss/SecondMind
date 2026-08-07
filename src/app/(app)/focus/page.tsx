@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
+import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
 
 type DriftResult = { off_track: boolean; reason: string };
 type ContradictionResult = {
@@ -47,6 +48,12 @@ export default function FocusPage() {
   const [writing, setWriting] = useState("");
   const [checking, setChecking] = useState(false);
   const [wordCount, setWordCount] = useState(0);
+
+  // Deep fact-check (against notes + the web)
+  const [factChecking, setFactChecking] = useState(false);
+  const [factResults, setFactResults] = useState<FactResult[] | null>(null);
+  const [factMessage, setFactMessage] = useState("");
+  const [showFactModal, setShowFactModal] = useState(false);
 
   // Single active centered popup + dismissal memory
   const [popup, setPopup] = useState<Popup>(null);
@@ -178,6 +185,35 @@ export default function FocusPage() {
     const id = setInterval(runFocusCheck, 30_000);
     return () => clearInterval(id);
   }, [runFocusCheck]);
+
+  // Deep fact-check against notes + the web (on demand).
+  async function runFactCheck() {
+    const text = writingRef.current.trim();
+    if (text.length < 20) {
+      setFactMessage("Write a bit more to fact-check.");
+      setFactResults(null);
+      setShowFactModal(true);
+      return;
+    }
+    setFactChecking(true);
+    setShowFactModal(true);
+    setFactMessage("");
+    setFactResults(null);
+    try {
+      const res = await fetch("/api/factcheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setFactResults(d.results ?? []);
+      setFactMessage(d.message || "");
+    } catch {
+      setFactMessage("Couldn't run the fact-check — try again.");
+    } finally {
+      setFactChecking(false);
+    }
+  }
 
   // Behaviour 3: auto-table after a 3s pause
   const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -319,6 +355,13 @@ export default function FocusPage() {
               className="text-xs font-medium text-accent hover:text-accent-soft"
             >
               check me now ⚡
+            </button>
+            <button
+              onClick={runFactCheck}
+              disabled={factChecking}
+              className="text-xs font-bold bg-sky/15 text-sky rounded-full px-3 py-1 hover:bg-sky/25 disabled:opacity-60"
+            >
+              {factChecking ? "fact-checking…" : "🔎 fact-check"}
             </button>
           </div>
         </div>
@@ -483,6 +526,51 @@ export default function FocusPage() {
           </div>
         )}
       </PopOver>
+
+      {/* Deep fact-check results modal */}
+      {showFactModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center px-6 bg-ink-950/70 backdrop-blur-sm animate-backdrop-in"
+          onClick={() => setShowFactModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-ink-900 border-2 border-sky/40 rounded-3xl p-6 animate-pop-in max-h-[80vh] overflow-auto"
+          >
+            <button
+              onClick={() => setShowFactModal(false)}
+              className="absolute top-3 right-4 text-ink-500 hover:text-ink-200 text-lg"
+            >
+              ×
+            </button>
+            <div className="text-center mb-4">
+              <div className="text-3xl mb-1">🔎</div>
+              <h3 className="text-lg font-bold">Fact-check</h3>
+              <p className="text-xs text-ink-400 mt-1">
+                Checked against your notes + the web.
+              </p>
+            </div>
+
+            {factChecking && (
+              <p className="text-sm text-ink-400 text-center py-8">
+                extracting claims → searching the web → verifying…
+              </p>
+            )}
+
+            {!factChecking && factMessage && (!factResults || factResults.length === 0) && (
+              <p className="text-sm text-ink-300 text-center py-6">{factMessage}</p>
+            )}
+
+            {!factChecking && factResults && factResults.length > 0 && (
+              <div className="space-y-2.5">
+                {factResults.map((r, i) => (
+                  <FactResultCard key={i} r={r} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
