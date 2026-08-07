@@ -13,9 +13,10 @@ export const maxDuration = 60;
 
 const EXTRACT_SYSTEM = `You are a fact-checking assistant. From the passage, extract the distinct, CHECKABLE factual claims — statements that could be verified true or false against evidence (dates, statistics, historical/scientific/causal assertions, named attributions, definitions).
 Ignore opinions, questions, hypotheticals, and vague statements.
-Return STRICT JSON: {"claims": ["<concise standalone claim>", ...]}
+Return STRICT JSON: {"claims": [{"claim": "<concise standalone claim, pronouns resolved>", "quote": "<the EXACT verbatim sentence or span copied character-for-character from the passage that states this claim>"}]}
 Rules:
-- At most 5 claims, each a concise, self-contained sentence (resolve pronouns).
+- At most 5 claims.
+- "quote" MUST be an exact substring of the passage — copy it verbatim (same words, casing, and punctuation) so it can be located in the text. Do not paraphrase the quote.
 - If there are no checkable factual claims, return {"claims": []}.`;
 
 const VERIFY_SYSTEM = `You are a rigorous, impartial fact-checker. For each CLAIM you are given the user's own NOTES and a numbered list of web SEARCH RESULTS (title, snippet, url). Judge each claim using BOTH sources of evidence.
@@ -50,15 +51,18 @@ export async function POST(req: NextRequest) {
 
   const db = createServiceSupabase();
 
-  // 1. Extract checkable claims.
-  let claims: string[] = [];
+  // 1. Extract checkable claims (with the verbatim quote from the passage).
+  let claimObjs: { claim: string; quote: string }[] = [];
   try {
-    const extracted = await llmJSON<{ claims: string[] }>(
-      EXTRACT_SYSTEM,
-      `PASSAGE:\n"""${writing}"""`,
-      { temperature: 0.2, maxOutputTokens: 500 }
-    );
-    claims = (extracted.claims ?? []).slice(0, 5).filter((c) => c && c.trim());
+    const extracted = await llmJSON<{
+      claims: { claim: string; quote: string }[];
+    }>(EXTRACT_SYSTEM, `PASSAGE:\n"""${writing}"""`, {
+      temperature: 0.2,
+      maxOutputTokens: 700,
+    });
+    claimObjs = (extracted.claims ?? [])
+      .slice(0, 5)
+      .filter((c) => c && c.claim && c.claim.trim());
   } catch {
     return NextResponse.json(
       { results: [], message: "Couldn't analyze the text right now — try again." },
@@ -66,9 +70,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (claims.length === 0) {
+  if (claimObjs.length === 0) {
     return NextResponse.json({ results: [], message: "No checkable factual claims found." });
   }
+
+  const claims = claimObjs.map((c) => c.claim);
 
   // 2. Web evidence for each claim (best-effort).
   const perClaimResults = await Promise.all(
@@ -137,6 +143,7 @@ export async function POST(req: NextRequest) {
     }
     return {
       claim: item.claim || claims[i] || "",
+      quote: claimObjs[i]?.quote || "",
       verdict: item.verdict,
       correction: item.correction || "",
       explanation: item.explanation || "",

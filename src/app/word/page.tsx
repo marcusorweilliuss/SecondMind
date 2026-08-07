@@ -297,6 +297,63 @@ export default function WordPanel() {
     }
   }, [readDocText, tryOpen, authedFetch]);
 
+  // Highlight the flagged sentences directly in the Word document.
+  const highlightedQuotes = useRef<string[]>([]);
+  const highlightInWord = useCallback(async (results: FactResult[]) => {
+    const colorFor = (v: string) =>
+      v === "inaccurate" ? "#FFC7CE" : v === "unverifiable" ? "#FFEB9C" : "#C6EFCE";
+    const quotes: string[] = [];
+    try {
+      await window.Word.run(async (context: any) => {
+        for (const r of results) {
+          const q = (r.quote || "").trim();
+          if (q.length < 4 || q.length > 250) continue;
+          try {
+            const search = context.document.body.search(q, {
+              matchCase: false,
+              ignorePunct: true,
+            });
+            search.load("items");
+            await context.sync();
+            for (const item of search.items) {
+              item.font.highlightColor = colorFor(r.verdict);
+            }
+            if (search.items.length) quotes.push(q);
+          } catch {
+            /* skip quotes Word can't search (too long / special chars) */
+          }
+        }
+        await context.sync();
+      });
+      highlightedQuotes.current = quotes;
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const clearWordHighlights = useCallback(async () => {
+    if (!highlightedQuotes.current.length) return;
+    try {
+      await window.Word.run(async (context: any) => {
+        for (const q of highlightedQuotes.current) {
+          const search = context.document.body.search(q, {
+            matchCase: false,
+            ignorePunct: true,
+          });
+          search.load("items");
+          await context.sync();
+          for (const item of search.items) {
+            item.font.highlightColor = null;
+          }
+        }
+        await context.sync();
+      });
+      highlightedQuotes.current = [];
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // Deep fact-check against notes + the web (on demand).
   const runFactCheck = useCallback(async () => {
     if (!tokenRef.current) return;
@@ -310,6 +367,7 @@ export default function WordPanel() {
     setFactChecking(true);
     setFactResults(null);
     setFactMessage("");
+    await clearWordHighlights();
     try {
       const res = await authedFetch("/api/factcheck", {
         method: "POST",
@@ -317,14 +375,16 @@ export default function WordPanel() {
         body: JSON.stringify({ writing: text }),
       });
       const d = await res.json();
-      setFactResults(d.results ?? []);
+      const results: FactResult[] = d.results ?? [];
+      setFactResults(results);
       setFactMessage(d.message || "");
+      if (results.length) highlightInWord(results);
     } catch {
       setFactMessage("Couldn't run the fact-check — try again.");
     } finally {
       setFactChecking(false);
     }
-  }, [readDocText, authedFetch]);
+  }, [readDocText, authedFetch, highlightInWord, clearWordHighlights]);
 
   // Run once as soon as Word + auth are ready.
   useEffect(() => {
@@ -573,12 +633,22 @@ export default function WordPanel() {
         <div className="bg-ink-900 border border-sky/30 rounded-2xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-sky">🔎 Fact-check</span>
-            <button
-              onClick={() => setShowFacts(false)}
-              className="text-[11px] text-ink-500 hover:text-ink-300"
-            >
-              hide
-            </button>
+            <div className="flex items-center gap-2">
+              {factResults && factResults.length > 0 && (
+                <button
+                  onClick={clearWordHighlights}
+                  className="text-[11px] text-ink-500 hover:text-ink-300"
+                >
+                  clear highlights
+                </button>
+              )}
+              <button
+                onClick={() => setShowFacts(false)}
+                className="text-[11px] text-ink-500 hover:text-ink-300"
+              >
+                hide
+              </button>
+            </div>
           </div>
           {factChecking && (
             <p className="text-[11px] text-ink-400">
@@ -589,11 +659,16 @@ export default function WordPanel() {
             <p className="text-[11px] text-ink-300">{factMessage}</p>
           )}
           {!factChecking && factResults && factResults.length > 0 && (
-            <div className="space-y-2">
-              {factResults.map((r, i) => (
-                <FactResultCard key={i} r={r} compact />
-              ))}
-            </div>
+            <>
+              <p className="text-[10px] text-ink-500">
+                Flagged sentences are highlighted in your document.
+              </p>
+              <div className="space-y-2">
+                {factResults.map((r, i) => (
+                  <FactResultCard key={i} r={r} compact />
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

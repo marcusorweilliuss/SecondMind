@@ -3,6 +3,7 @@
 export type FactVerdict = "accurate" | "inaccurate" | "unverifiable";
 export type FactResult = {
   claim: string;
+  quote: string;
   verdict: FactVerdict;
   correction: string;
   explanation: string;

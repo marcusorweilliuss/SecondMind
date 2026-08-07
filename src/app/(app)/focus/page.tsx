@@ -32,6 +32,54 @@ type Popup =
   | { kind: "table"; table: TableResult }
   | null;
 
+const VERDICT_BG: Record<string, string> = {
+  inaccurate: "rgba(255,107,107,0.38)",
+  unverifiable: "rgba(255,212,59,0.32)",
+  accurate: "rgba(123,216,143,0.30)",
+};
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Build the highlighted backdrop HTML: wrap each flagged quote in a colored
+// <mark> so it shows behind the (transparent-bg) textarea text.
+function buildHighlightHtml(text: string, results: FactResult[]): string {
+  type Range = { start: number; end: number; verdict: string };
+  const lower = text.toLowerCase();
+  const ranges: Range[] = [];
+  for (const r of results) {
+    const q = (r.quote || "").trim();
+    if (q.length < 4) continue;
+    const idx = lower.indexOf(q.toLowerCase());
+    if (idx === -1) continue;
+    ranges.push({ start: idx, end: idx + q.length, verdict: r.verdict });
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  // Drop overlaps (keep the earliest).
+  const merged: Range[] = [];
+  for (const r of ranges) {
+    if (merged.length && r.start < merged[merged.length - 1].end) continue;
+    merged.push(r);
+  }
+  let html = "";
+  let cursor = 0;
+  for (const r of merged) {
+    html += escapeHtml(text.slice(cursor, r.start));
+    const bg = VERDICT_BG[r.verdict] ?? VERDICT_BG.unverifiable;
+    html += `<mark style="background:${bg};color:transparent;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escapeHtml(
+      text.slice(r.start, r.end)
+    )}</mark>`;
+    cursor = r.end;
+  }
+  html += escapeHtml(text.slice(cursor));
+  // Trailing newline so the backdrop matches the textarea's last line height.
+  return html + "\n";
+}
+
 export default function FocusPage() {
   // Task context
   const [taskDescription, setTaskDescription] = useState("");
@@ -54,6 +102,9 @@ export default function FocusPage() {
   const [factResults, setFactResults] = useState<FactResult[] | null>(null);
   const [factMessage, setFactMessage] = useState("");
   const [showFactModal, setShowFactModal] = useState(false);
+  const [factCheckedText, setFactCheckedText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
 
   // Single active centered popup + dismissal memory
   const [popup, setPopup] = useState<Popup>(null);
@@ -208,6 +259,7 @@ export default function FocusPage() {
       const d = await res.json();
       setFactResults(d.results ?? []);
       setFactMessage(d.message || "");
+      setFactCheckedText(text);
     } catch {
       setFactMessage("Couldn't run the fact-check — try again.");
     } finally {
@@ -366,16 +418,50 @@ export default function FocusPage() {
           </div>
         </div>
 
-        <textarea
-          value={writing}
-          onChange={(e) => onWritingChange(e.target.value)}
-          placeholder="Start writing… I'll pop in if you wander off-topic, fact-check against your notes, and offer to build tables when you pause. Just vibe. ✨"
-          rows={18}
-          className="w-full bg-ink-900 border border-ink-800 rounded-3xl px-6 py-5 text-[16px] leading-8 focus:outline-none focus:border-ink-600 resize-y shadow-inner"
-        />
-        <p className="text-center text-[11px] text-ink-600">
-          auto-checks every 30s · table radar fires when you pause for 3s
-        </p>
+        <div className="relative">
+          {/* Highlight backdrop (behind the transparent textarea). */}
+          {factResults && writing === factCheckedText && (
+            <div
+              ref={backdropRef}
+              aria-hidden
+              className="absolute inset-0 overflow-auto rounded-3xl border border-transparent bg-ink-900 text-transparent px-6 py-5 text-[16px] leading-8 whitespace-pre-wrap break-words pointer-events-none"
+              dangerouslySetInnerHTML={{
+                __html: buildHighlightHtml(writing, factResults),
+              }}
+            />
+          )}
+          <textarea
+            ref={textareaRef}
+            value={writing}
+            onChange={(e) => onWritingChange(e.target.value)}
+            onScroll={() => {
+              if (backdropRef.current && textareaRef.current) {
+                backdropRef.current.scrollTop = textareaRef.current.scrollTop;
+                backdropRef.current.scrollLeft = textareaRef.current.scrollLeft;
+              }
+            }}
+            placeholder="Start writing… I'll pop in if you wander off-topic, fact-check against your notes, and offer to build tables when you pause. Just vibe. ✨"
+            rows={18}
+            className="relative w-full bg-ink-900 border border-ink-800 rounded-3xl px-6 py-5 text-[16px] leading-8 focus:outline-none focus:border-ink-600 resize-y shadow-inner"
+            style={
+              factResults && writing === factCheckedText
+                ? { background: "transparent" }
+                : undefined
+            }
+          />
+        </div>
+        {factResults && factResults.length > 0 && writing === factCheckedText ? (
+          <p className="text-center text-[11px] text-ink-500">
+            🔎 highlighted{" "}
+            <span className="text-coral">●</span> wrong ·{" "}
+            <span className="text-accent">●</span> unverified ·{" "}
+            <span className="text-grass">●</span> checks out — edit to clear
+          </p>
+        ) : (
+          <p className="text-center text-[11px] text-ink-600">
+            auto-checks every 30s · table radar fires when you pause for 3s
+          </p>
+        )}
       </section>
 
       {/* Drift popup */}
