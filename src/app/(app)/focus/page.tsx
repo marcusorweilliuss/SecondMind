@@ -33,11 +33,22 @@ type Popup =
   | { kind: "table"; table: TableResult }
   | null;
 
-const VERDICT_BG: Record<string, string> = {
-  inaccurate: "rgba(255,107,107,0.38)",
-  unverifiable: "rgba(255,212,59,0.32)",
-  accurate: "rgba(123,216,143,0.30)",
+const CATEGORY_BG: Record<string, string> = {
+  inaccurate: "rgba(255,107,107,0.38)", // coral
+  overclaimed: "rgba(255,138,76,0.36)", // orange
+  needs_source: "rgba(255,212,59,0.32)", // amber
+  unverifiable: "rgba(255,212,59,0.28)", // amber (lighter)
+  accurate: "rgba(123,216,143,0.30)", // green
 };
+
+// Pick the highlight category for a result (flags can outrank a soft verdict).
+function highlightCategory(r: FactResult): string {
+  if (r.verdict === "inaccurate") return "inaccurate";
+  if (r.flag === "overclaimed") return "overclaimed";
+  if (r.flag === "needs_source") return "needs_source";
+  if (r.verdict === "unverifiable") return "unverifiable";
+  return "accurate";
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -49,13 +60,13 @@ function escapeHtml(s: string): string {
 // Build the highlighted backdrop HTML: wrap each flagged quote in a colored
 // <mark> so it shows behind the (transparent-bg) textarea text.
 function buildHighlightHtml(text: string, results: FactResult[]): string {
-  type Range = { start: number; end: number; verdict: string };
+  type Range = { start: number; end: number; category: string };
   const ranges: Range[] = [];
   for (const r of results) {
     // Locate the best-matching sentence — robust to the AI rewording the quote.
     const span = locateClaim(text, r.quote || r.claim || "");
     if (!span) continue;
-    ranges.push({ start: span.start, end: span.end, verdict: r.verdict });
+    ranges.push({ start: span.start, end: span.end, category: highlightCategory(r) });
   }
   ranges.sort((a, b) => a.start - b.start);
   // Drop overlaps (keep the earliest).
@@ -68,7 +79,7 @@ function buildHighlightHtml(text: string, results: FactResult[]): string {
   let cursor = 0;
   for (const r of merged) {
     html += escapeHtml(text.slice(cursor, r.start));
-    const bg = VERDICT_BG[r.verdict] ?? VERDICT_BG.unverifiable;
+    const bg = CATEGORY_BG[r.category] ?? CATEGORY_BG.unverifiable;
     html += `<mark style="background:${bg};color:transparent;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escapeHtml(
       text.slice(r.start, r.end)
     )}</mark>`;
@@ -464,9 +475,9 @@ export default function FocusPage() {
         </div>
         {factResults && factResults.length > 0 && writing === factCheckedText ? (
           <p className="text-center text-[11px] text-ink-500">
-            🔎 highlighted{" "}
-            <span className="text-coral">●</span> wrong ·{" "}
-            <span className="text-accent">●</span> unverified ·{" "}
+            🔎 <span className="text-coral">●</span> wrong ·{" "}
+            <span style={{ color: "#ff8a4c" }}>●</span> overclaimed ·{" "}
+            <span className="text-accent">●</span> needs source / unverified ·{" "}
             <span className="text-grass">●</span> checks out — edit to clear
           </p>
         ) : (

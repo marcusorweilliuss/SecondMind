@@ -304,15 +304,21 @@ export default function WordPanel() {
   const highlightedQuotes = useRef<string[]>([]);
   const highlightInWord = useCallback(
     async (results: FactResult[], docText: string) => {
-      const colorFor = (v: string) =>
-        v === "inaccurate" ? "#FFC7CE" : v === "unverifiable" ? "#FFEB9C" : "#C6EFCE";
+      // Category → Word highlight color (Word supports a fixed palette).
+      const colorFor = (r: FactResult) => {
+        if (r.verdict === "inaccurate") return "#FFC7CE"; // red/pink
+        if (r.flag === "overclaimed") return "#FFD8A8"; // orange
+        if (r.flag === "needs_source") return "#FFEB9C"; // yellow
+        if (r.verdict === "unverifiable") return "#FFF3BF"; // pale yellow
+        return "#C6EFCE"; // green
+      };
       const chunks: { text: string; color: string }[] = [];
       for (const r of results) {
         const span = locateClaim(docText, r.quote || r.claim || "");
         if (!span) continue;
         const sentence = docText.slice(span.start, span.end);
         for (const c of chunkForWordSearch(sentence)) {
-          chunks.push({ text: c, color: colorFor(r.verdict) });
+          chunks.push({ text: c, color: colorFor(r) });
         }
       }
       if (chunks.length === 0) return;

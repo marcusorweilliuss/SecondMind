@@ -1,13 +1,39 @@
 "use client";
 
 export type FactVerdict = "accurate" | "inaccurate" | "unverifiable";
+export type FactSupport = "well-supported" | "weak" | "unsupported";
+export type FactFlag = "needs_source" | "overclaimed" | null;
 export type FactResult = {
   claim: string;
   quote: string;
   verdict: FactVerdict;
+  support: FactSupport;
+  flag: FactFlag;
   correction: string;
   explanation: string;
   source: { title: string; url: string } | null;
+};
+
+const SUPPORT_STYLE: Record<FactSupport, { badge: string; label: string }> = {
+  "well-supported": { badge: "bg-grass/15 text-grass", label: "well supported" },
+  weak: { badge: "bg-accent/15 text-accent", label: "weakly supported" },
+  unsupported: { badge: "bg-coral/15 text-coral", label: "unsupported" },
+};
+
+const FLAG_STYLE: Record<
+  "needs_source" | "overclaimed",
+  { badge: string; label: string; emoji: string }
+> = {
+  needs_source: {
+    badge: "bg-accent/15 text-accent",
+    label: "needs a source",
+    emoji: "🔗",
+  },
+  overclaimed: {
+    badge: "bg-coral/15 text-coral",
+    label: "overclaimed",
+    emoji: "⚠️",
+  },
 };
 
 const STYLE: Record<
@@ -51,12 +77,26 @@ export function FactResultCard({
       <div className="flex items-start gap-2">
         <span className={compact ? "text-sm" : "text-base"}>{s.emoji}</span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
             <span
               className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${s.badge}`}
             >
               {s.label}
             </span>
+            {r.support && (
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${SUPPORT_STYLE[r.support].badge}`}
+              >
+                {SUPPORT_STYLE[r.support].label}
+              </span>
+            )}
+            {r.flag && (
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${FLAG_STYLE[r.flag].badge}`}
+              >
+                {FLAG_STYLE[r.flag].emoji} {FLAG_STYLE[r.flag].label}
+              </span>
+            )}
             {onDismiss && (
               <button
                 onClick={() => onDismiss(r)}
@@ -74,7 +114,8 @@ export function FactResultCard({
               {r.explanation}
             </p>
           )}
-          {r.verdict === "inaccurate" && r.correction && (
+          {(r.verdict === "inaccurate" || r.flag === "overclaimed") &&
+            r.correction && (
             <div className="mt-2 bg-grass/10 border border-grass/25 rounded-lg px-2.5 py-1.5">
               <span className="text-[10px] uppercase tracking-wider text-grass font-bold">
                 suggested

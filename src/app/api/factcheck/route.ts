@@ -19,21 +19,28 @@ Rules:
 - "quote" MUST be an exact substring of the passage — copy it verbatim (same words, casing, and punctuation) so it can be located in the text. Do not paraphrase the quote.
 - If there are no checkable factual claims, return {"claims": []}.`;
 
-const VERIFY_SYSTEM = `You are a rigorous, impartial fact-checker. For each CLAIM you are given the user's own NOTES and a numbered list of web SEARCH RESULTS (title, snippet, url). Judge each claim using BOTH sources of evidence.
+const VERIFY_SYSTEM = `You are a rigorous, impartial fact-checker and critical reader. For each CLAIM you are given the user's own NOTES and a numbered list of web SEARCH RESULTS (title, snippet, url). Judge each claim using BOTH sources of evidence.
 Return STRICT JSON:
-{"results":[{"claim":"<the claim>","verdict":"accurate"|"inaccurate"|"unverifiable","correction":"<corrected statement if inaccurate, else empty>","explanation":"<one sentence on what the evidence shows>","source_number":<the number of the single best supporting/contradicting result, or null>}]}
+{"results":[{"claim":"<the claim>","verdict":"accurate"|"inaccurate"|"unverifiable","support":"well-supported"|"weak"|"unsupported","flag":"needs_source"|"overclaimed"|null,"correction":"<corrected statement if inaccurate, else empty>","explanation":"<one sentence on what the evidence shows>","source_number":<the number of the single best supporting/contradicting result, or null>}]}
 Rules:
-- "accurate": the claim is well-supported by the evidence.
-- "inaccurate": the evidence clearly contradicts the claim. Provide the corrected statement.
-- "unverifiable": the evidence is insufficient or absent. correction stays empty.
+- verdict: "accurate" = the claim matches the evidence; "inaccurate" = the evidence clearly contradicts it (give a correction); "unverifiable" = evidence is insufficient or absent.
+- support: how strongly the evidence backs the claim — "well-supported" (clear corroboration), "weak" (partial/indirect only), or "unsupported" (no real evidence found).
+- flag: set to
+  - "needs_source" when the claim is a specific factual/statistical/attributed assertion that has NO citation in the text AND no corroborating web result (i.e. it should be backed by a source but isn't);
+  - "overclaimed" when the wording is absolute or universal (e.g. "proves", "always", "never", "everyone", "the first/only", "guarantees") but the evidence supports only a qualified/partial version;
+  - otherwise null.
+- correction: only when verdict is "inaccurate" (or an "overclaimed" claim that should be softened) — else empty.
 - source_number MUST be one of the provided result numbers for that claim, or null. NEVER invent a URL or cite a result that wasn't provided.
-- Judge from evidence, not assumptions. If the user's notes and the web conflict, say so in the explanation and prefer authoritative, current web sources.
-- Return one entry per claim, in order.`;
+- Judge from evidence, not assumptions. Prefer authoritative, current sources. Return one entry per claim, in order.`;
 
 type Verdict = "accurate" | "inaccurate" | "unverifiable";
+type Support = "well-supported" | "weak" | "unsupported";
+type Flag = "needs_source" | "overclaimed" | null;
 type VerifyItem = {
   claim: string;
   verdict: Verdict;
+  support: Support;
+  flag: Flag;
   correction: string;
   explanation: string;
   source_number: number | null;
@@ -141,10 +148,16 @@ export async function POST(req: NextRequest) {
       const r = claimResults[item.source_number - 1];
       source = { title: r.title, url: r.url };
     }
+    const flag: Flag =
+      item.flag === "needs_source" || item.flag === "overclaimed"
+        ? item.flag
+        : null;
     return {
       claim: item.claim || claims[i] || "",
       quote: claimObjs[i]?.quote || "",
       verdict: item.verdict,
+      support: item.support || "weak",
+      flag,
       correction: item.correction || "",
       explanation: item.explanation || "",
       source,
