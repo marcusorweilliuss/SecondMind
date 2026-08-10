@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
 import { SuggestionCard, type Suggestion } from "@/components/SuggestedReading";
+import { ConsiderSections, type Consider } from "@/components/ConsiderPanel";
 import { locateClaim } from "@/lib/highlight";
 
 type DriftResult = { off_track: boolean; reason: string };
@@ -128,6 +129,12 @@ export default function FocusPage() {
   const [showSaveSignal, setShowSaveSignal] = useState(false);
   const [saveSignalText, setSaveSignalText] = useState("");
   const [saveSignalStatus, setSaveSignalStatus] = useState("");
+
+  // Things to consider (Step 6)
+  const [showConsider, setShowConsider] = useState(false);
+  const [consider, setConsider] = useState<Consider | null>(null);
+  const [considerLoading, setConsiderLoading] = useState(false);
+  const [considerMessage, setConsiderMessage] = useState("");
 
   // Bibliography (Step 5)
   const [showBiblio, setShowBiblio] = useState(false);
@@ -369,6 +376,38 @@ export default function FocusPage() {
     }
   }
 
+  // Things to consider (Step 6).
+  async function runConsider() {
+    const text = writingRef.current.trim();
+    setShowConsider(true);
+    if (text.length < 40) {
+      setConsider(null);
+      setConsiderMessage("Write a bit more and I'll surface things to consider.");
+      return;
+    }
+    setConsiderLoading(true);
+    setConsider(null);
+    setConsiderMessage("");
+    try {
+      const res = await fetch("/api/consider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setConsider(d.consider ?? null);
+      setConsiderMessage(d.message || "");
+    } catch {
+      setConsiderMessage("Couldn't analyze the draft — try again.");
+    } finally {
+      setConsiderLoading(false);
+    }
+  }
+
+  function insertConsiderLine(line: string) {
+    setWriting((prev) => `${prev.trimEnd()}\n- ${line}\n`);
+  }
+
   // Bibliography (Step 5).
   async function runBibliography(
     projectId = biblioProject,
@@ -588,6 +627,13 @@ export default function FocusPage() {
               className="text-xs font-bold bg-grass/15 text-grass rounded-full px-3 py-1 hover:bg-grass/25 disabled:opacity-60"
             >
               {suggesting ? "finding…" : "📚 suggested reading"}
+            </button>
+            <button
+              onClick={runConsider}
+              disabled={considerLoading}
+              className="text-xs font-bold bg-accent/15 text-accent rounded-full px-3 py-1 hover:bg-accent/25 disabled:opacity-60"
+            >
+              {considerLoading ? "thinking…" : "🧩 things to consider"}
             </button>
             <button
               onClick={openSaveSignal}
@@ -901,6 +947,47 @@ export default function FocusPage() {
           </div>
         </div>
       </PopOver>
+
+      {/* Things to consider modal */}
+      {showConsider && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center px-6 bg-ink-950/70 backdrop-blur-sm animate-backdrop-in"
+          onClick={() => setShowConsider(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-ink-900 border-2 border-accent/40 rounded-3xl p-6 animate-pop-in max-h-[80vh] overflow-auto"
+          >
+            <button
+              onClick={() => setShowConsider(false)}
+              className="absolute top-3 right-4 text-ink-500 hover:text-ink-200 text-lg"
+            >
+              ×
+            </button>
+            <div className="text-center mb-4">
+              <div className="text-3xl mb-1">🧩</div>
+              <h3 className="text-lg font-bold">Things to consider</h3>
+              <p className="text-xs text-ink-400 mt-1">
+                Supporting points, tensions, future work, open questions.
+              </p>
+            </div>
+
+            {considerLoading && (
+              <p className="text-sm text-ink-400 text-center py-8">
+                reading your draft…
+              </p>
+            )}
+            {!considerLoading && considerMessage && !consider && (
+              <p className="text-sm text-ink-300 text-center py-6">
+                {considerMessage}
+              </p>
+            )}
+            {!considerLoading && consider && (
+              <ConsiderSections data={consider} onInsert={insertConsiderLine} />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Bibliography modal */}
       {showBiblio && (

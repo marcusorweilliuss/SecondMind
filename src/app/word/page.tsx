@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
 import { SuggestionCard, type Suggestion } from "@/components/SuggestedReading";
+import { ConsiderSections, type Consider } from "@/components/ConsiderPanel";
 import { locateClaim, chunkForWordSearch } from "@/lib/highlight";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -74,6 +75,12 @@ export default function WordPanel() {
   const [biblioEntries, setBiblioEntries] = useState<string[] | null>(null);
   const [biblioLoading, setBiblioLoading] = useState(false);
   const [biblioMessage, setBiblioMessage] = useState("");
+
+  // Things to consider (Step 6)
+  const [showConsider, setShowConsider] = useState(false);
+  const [consider, setConsider] = useState<Consider | null>(null);
+  const [considerLoading, setConsiderLoading] = useState(false);
+  const [considerMessage, setConsiderMessage] = useState("");
 
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
@@ -491,6 +498,46 @@ export default function WordPanel() {
     }
   }, [readDocText, authedFetch]);
 
+  // Things to consider (Step 6).
+  const runConsider = useCallback(async () => {
+    if (!tokenRef.current) return;
+    const text = (await readDocText()).trim();
+    setShowConsider(true);
+    if (text.length < 40) {
+      setConsider(null);
+      setConsiderMessage("Write a bit more and I'll surface things to consider.");
+      return;
+    }
+    setConsiderLoading(true);
+    setConsider(null);
+    setConsiderMessage("");
+    try {
+      const res = await authedFetch("/api/consider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setConsider(d.consider ?? null);
+      setConsiderMessage(d.message || "");
+    } catch {
+      setConsiderMessage("Couldn't analyze the draft — try again.");
+    } finally {
+      setConsiderLoading(false);
+    }
+  }, [readDocText, authedFetch]);
+
+  const insertConsiderLine = useCallback(async (line: string) => {
+    try {
+      await window.Word.run(async (context: any) => {
+        context.document.body.insertParagraph(line, window.Word.InsertLocation.end);
+        await context.sync();
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // Bibliography (Step 5).
   const runBibliography = useCallback(
     async (style: "apa" | "mla" | "chicago") => {
@@ -804,6 +851,38 @@ export default function WordPanel() {
       >
         {suggesting ? "finding…" : "📚 suggested reading"}
       </button>
+      <button
+        onClick={runConsider}
+        disabled={considerLoading || !officeReady}
+        className="w-full text-xs font-bold bg-accent/15 text-accent rounded-full px-2 py-2 hover:bg-accent/25 disabled:opacity-60"
+      >
+        {considerLoading ? "thinking…" : "🧩 things to consider"}
+      </button>
+
+      {/* Things to consider panel */}
+      {showConsider && (
+        <div className="bg-ink-900 border border-accent/30 rounded-2xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-accent">🧩 To consider</span>
+            <button
+              onClick={() => setShowConsider(false)}
+              className="text-[11px] text-ink-500 hover:text-ink-300"
+            >
+              hide
+            </button>
+          </div>
+          {considerLoading && (
+            <p className="text-[11px] text-ink-400">reading your draft…</p>
+          )}
+          {!considerLoading && considerMessage && !consider && (
+            <p className="text-[11px] text-ink-300">{considerMessage}</p>
+          )}
+          {!considerLoading && consider && (
+            <ConsiderSections data={consider} compact onInsert={insertConsiderLine} />
+          )}
+        </div>
+      )}
+
       <button
         onClick={() => {
           setShowBiblio((v) => !v);
