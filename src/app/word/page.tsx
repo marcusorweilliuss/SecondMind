@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
+import { SuggestionCard, type Suggestion } from "@/components/SuggestedReading";
 import { locateClaim, chunkForWordSearch } from "@/lib/highlight";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -60,6 +61,12 @@ export default function WordPanel() {
   const [factResults, setFactResults] = useState<FactResult[] | null>(null);
   const [factMessage, setFactMessage] = useState("");
   const [showFacts, setShowFacts] = useState(false);
+
+  // Suggested reading (Step 3)
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [suggestMessage, setSuggestMessage] = useState("");
+  const [showSuggest, setShowSuggest] = useState(false);
 
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
@@ -448,6 +455,56 @@ export default function WordPanel() {
     }
   }, [readDocText, authedFetch, highlightInWord, clearWordHighlights]);
 
+  // Suggested reading (Step 3).
+  const runSuggestSources = useCallback(async () => {
+    if (!tokenRef.current) return;
+    const text = (await readDocText()).trim();
+    setShowSuggest(true);
+    if (text.length < 20) {
+      setSuggestions(null);
+      setSuggestMessage("Write a bit more and I'll suggest reading.");
+      return;
+    }
+    setSuggesting(true);
+    setSuggestions(null);
+    setSuggestMessage("");
+    try {
+      const res = await authedFetch("/api/suggest-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setSuggestions(d.suggestions ?? []);
+      setSuggestMessage(d.message || "");
+    } catch {
+      setSuggestMessage("Couldn't fetch suggestions — try again.");
+    } finally {
+      setSuggesting(false);
+    }
+  }, [readDocText, authedFetch]);
+
+  const saveSuggestion = useCallback(
+    async (s: Suggestion, projectId: string): Promise<boolean> => {
+      try {
+        const res = await authedFetch("/api/signals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_id: projectId,
+            highlight_text: s.title,
+            source_url: s.url,
+            source_title: s.source,
+          }),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    [authedFetch]
+  );
+
   // Run once as soon as Word + auth are ready.
   useEffect(() => {
     if (officeReady && token) runFocusCheck();
@@ -688,6 +745,49 @@ export default function WordPanel() {
       >
         {factChecking ? "fact-checking…" : "🔎 fact-check against the web"}
       </button>
+      <button
+        onClick={runSuggestSources}
+        disabled={suggesting || !officeReady}
+        className="w-full text-xs font-bold bg-grass/15 text-grass rounded-full px-2 py-2 hover:bg-grass/25 disabled:opacity-60"
+      >
+        {suggesting ? "finding…" : "📚 suggested reading"}
+      </button>
+
+      {/* Suggested reading results */}
+      {showSuggest && (
+        <div className="bg-ink-900 border border-grass/30 rounded-2xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-grass">📚 Suggested reading</span>
+            <button
+              onClick={() => setShowSuggest(false)}
+              className="text-[11px] text-ink-500 hover:text-ink-300"
+            >
+              hide
+            </button>
+          </div>
+          {suggesting && (
+            <p className="text-[11px] text-ink-400">
+              finding angles → searching → picking…
+            </p>
+          )}
+          {!suggesting && suggestMessage && (!suggestions || suggestions.length === 0) && (
+            <p className="text-[11px] text-ink-300">{suggestMessage}</p>
+          )}
+          {!suggesting && suggestions && suggestions.length > 0 && (
+            <div className="space-y-2">
+              {suggestions.map((s, i) => (
+                <SuggestionCard
+                  key={i}
+                  s={s}
+                  projects={projects}
+                  onSave={saveSuggestion}
+                  compact
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {signalMsg && <p className="text-[11px] text-ink-400">{signalMsg}</p>}
 
       {/* Fact-check results */}

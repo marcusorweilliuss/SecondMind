@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PopOver from "@/components/PopOver";
 import { FactResultCard, type FactResult } from "@/components/FactCheckPanel";
+import { SuggestionCard, type Suggestion } from "@/components/SuggestedReading";
 import { locateClaim } from "@/lib/highlight";
 
 type DriftResult = { off_track: boolean; reason: string };
@@ -116,6 +117,13 @@ export default function FocusPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
 
+  // Suggested reading (Step 3)
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [suggestMessage, setSuggestMessage] = useState("");
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+
   // Single active centered popup + dismissal memory
   const [popup, setPopup] = useState<Popup>(null);
   const [copied, setCopied] = useState(false);
@@ -146,6 +154,10 @@ export default function FocusPage() {
         setGmailConnected(!!d.connected);
         setGmailEmail(d.email ?? null);
       })
+      .catch(() => {});
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((d) => setProjects(d.projects ?? []))
       .catch(() => {});
   }, []);
 
@@ -274,6 +286,52 @@ export default function FocusPage() {
       setFactMessage("Couldn't run the fact-check — try again.");
     } finally {
       setFactChecking(false);
+    }
+  }
+
+  // Suggested reading (Step 3).
+  async function runSuggestSources() {
+    const text = writingRef.current.trim();
+    setShowSuggestModal(true);
+    if (text.length < 20) {
+      setSuggestions(null);
+      setSuggestMessage("Write a bit more and I'll suggest reading.");
+      return;
+    }
+    setSuggesting(true);
+    setSuggestions(null);
+    setSuggestMessage("");
+    try {
+      const res = await fetch("/api/suggest-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ writing: text }),
+      });
+      const d = await res.json();
+      setSuggestions(d.suggestions ?? []);
+      setSuggestMessage(d.message || "");
+    } catch {
+      setSuggestMessage("Couldn't fetch suggestions — try again.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  async function saveSuggestion(s: Suggestion, projectId: string): Promise<boolean> {
+    try {
+      const res = await fetch("/api/signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          highlight_text: s.title,
+          source_url: s.url,
+          source_title: s.source,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -437,6 +495,13 @@ export default function FocusPage() {
               className="text-xs font-bold bg-sky/15 text-sky rounded-full px-3 py-1 hover:bg-sky/25 disabled:opacity-60"
             >
               {factChecking ? "fact-checking…" : "🔎 fact-check"}
+            </button>
+            <button
+              onClick={runSuggestSources}
+              disabled={suggesting}
+              className="text-xs font-bold bg-grass/15 text-grass rounded-full px-3 py-1 hover:bg-grass/25 disabled:opacity-60"
+            >
+              {suggesting ? "finding…" : "📚 suggested reading"}
             </button>
           </div>
         </div>
@@ -682,6 +747,56 @@ export default function FocusPage() {
                         prev ? prev.filter((y) => y !== x) : prev
                       )
                     }
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested reading modal */}
+      {showSuggestModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center px-6 bg-ink-950/70 backdrop-blur-sm animate-backdrop-in"
+          onClick={() => setShowSuggestModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-ink-900 border-2 border-grass/40 rounded-3xl p-6 animate-pop-in max-h-[80vh] overflow-auto"
+          >
+            <button
+              onClick={() => setShowSuggestModal(false)}
+              className="absolute top-3 right-4 text-ink-500 hover:text-ink-200 text-lg"
+            >
+              ×
+            </button>
+            <div className="text-center mb-4">
+              <div className="text-3xl mb-1">📚</div>
+              <h3 className="text-lg font-bold">Suggested reading</h3>
+              <p className="text-xs text-ink-400 mt-1">
+                Sources worth reading for what you&apos;re working on.
+              </p>
+            </div>
+
+            {suggesting && (
+              <p className="text-sm text-ink-400 text-center py-8">
+                finding reading angles → searching → picking the best…
+              </p>
+            )}
+
+            {!suggesting && suggestMessage && (!suggestions || suggestions.length === 0) && (
+              <p className="text-sm text-ink-300 text-center py-6">{suggestMessage}</p>
+            )}
+
+            {!suggesting && suggestions && suggestions.length > 0 && (
+              <div className="space-y-2.5">
+                {suggestions.map((s, i) => (
+                  <SuggestionCard
+                    key={i}
+                    s={s}
+                    projects={projects}
+                    onSave={saveSuggestion}
                   />
                 ))}
               </div>
