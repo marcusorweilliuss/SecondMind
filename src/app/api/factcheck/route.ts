@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { llmJSON } from "@/lib/llm";
-import { tavilySearch, type TavilyResult } from "@/lib/tavily";
+import {
+  tavilySearchAuthoritative,
+  credibilityOf,
+  type TavilyResult,
+  type Credibility,
+} from "@/lib/tavily";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -83,12 +88,14 @@ export async function POST(req: NextRequest) {
 
   const claims = claimObjs.map((c) => c.claim);
 
-  // 2. Web evidence for each claim (best-effort).
+  // 2. Web evidence for each claim, prioritising authoritative sources.
   const perClaimResults = await Promise.all(
     claims.map(async (claim) => {
       try {
-        const r = await tavilySearch(claim, { maxResults: 3, searchDepth: "basic" });
-        return r;
+        return await tavilySearchAuthoritative(claim, {
+          maxResults: 3,
+          searchDepth: "basic",
+        });
       } catch {
         return [] as TavilyResult[];
       }
@@ -139,14 +146,19 @@ export async function POST(req: NextRequest) {
   // 5. Map source_number -> real URL from that claim's Tavily results.
   const results = (verified.results ?? []).map((item, i) => {
     const claimResults = perClaimResults[i] ?? [];
-    let source: { title: string; url: string } | null = null;
+    let source: { title: string; url: string; credibility: Credibility } | null =
+      null;
     if (
       typeof item.source_number === "number" &&
       item.source_number >= 1 &&
       item.source_number <= claimResults.length
     ) {
       const r = claimResults[item.source_number - 1];
-      source = { title: r.title, url: r.url };
+      source = {
+        title: r.title,
+        url: r.url,
+        credibility: credibilityOf(r.url),
+      };
     }
     const flag: Flag =
       item.flag === "needs_source" || item.flag === "overclaimed"

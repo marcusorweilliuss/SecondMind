@@ -11,7 +11,17 @@ export type FactResult = {
   flag: FactFlag;
   correction: string;
   explanation: string;
-  source: { title: string; url: string } | null;
+  source: {
+    title: string;
+    url: string;
+    credibility?: "high" | "medium" | "unknown";
+  } | null;
+};
+
+const CRED_STYLE: Record<string, { badge: string; label: string }> = {
+  high: { badge: "bg-grass/15 text-grass", label: "authoritative" },
+  medium: { badge: "bg-accent/15 text-accent", label: "general" },
+  unknown: { badge: "bg-ink-700 text-ink-400", label: "unverified source" },
 };
 
 const SUPPORT_STYLE: Record<FactSupport, { badge: string; label: string }> = {
@@ -134,14 +144,25 @@ export function FactResultCard({
             </div>
           )}
           {r.source && (
-            <a
-              href={r.source.url}
-              target="_blank"
-              rel="noreferrer"
-              className={`${compact ? "text-[11px]" : "text-xs"} mt-2 inline-flex items-center gap-1 text-sky hover:underline break-all`}
-            >
-              📚 {r.source.title}
-            </a>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <a
+                href={r.source.url}
+                target="_blank"
+                rel="noreferrer"
+                className={`${compact ? "text-[11px]" : "text-xs"} inline-flex items-center gap-1 text-sky hover:underline break-all`}
+              >
+                📚 {r.source.title}
+              </a>
+              {r.source.credibility && (
+                <span
+                  className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                    (CRED_STYLE[r.source.credibility] ?? CRED_STYLE.unknown).badge
+                  }`}
+                >
+                  {(CRED_STYLE[r.source.credibility] ?? CRED_STYLE.unknown).label}
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
