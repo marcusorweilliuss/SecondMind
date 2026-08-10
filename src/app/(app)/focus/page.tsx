@@ -124,6 +124,11 @@ export default function FocusPage() {
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
 
+  // Save own writing as a signal (Step 4)
+  const [showSaveSignal, setShowSaveSignal] = useState(false);
+  const [saveSignalText, setSaveSignalText] = useState("");
+  const [saveSignalStatus, setSaveSignalStatus] = useState("");
+
   // Single active centered popup + dismissal memory
   const [popup, setPopup] = useState<Popup>(null);
   const [copied, setCopied] = useState(false);
@@ -317,6 +322,44 @@ export default function FocusPage() {
     }
   }
 
+  // Save the selected passage (or whole draft) as a self-authored signal.
+  function openSaveSignal() {
+    const ta = textareaRef.current;
+    let selected = "";
+    if (ta && ta.selectionStart !== ta.selectionEnd) {
+      selected = writing.slice(ta.selectionStart, ta.selectionEnd);
+    }
+    setSaveSignalText((selected || writing).trim());
+    setSaveSignalStatus("");
+    setShowSaveSignal(true);
+  }
+
+  async function saveOwnSignal(projectId: string) {
+    if (!saveSignalText.trim()) return;
+    const pid = projectId === "__unfiled__" ? null : projectId || null;
+    setSaveSignalStatus("saving…");
+    try {
+      const res = await fetch("/api/signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: pid,
+          highlight_text: saveSignalText.trim(),
+          source_title: "My writing",
+          origin: "self",
+        }),
+      });
+      if (res.ok) {
+        setSaveSignalStatus("saved ✓");
+        setTimeout(() => setShowSaveSignal(false), 900);
+      } else {
+        setSaveSignalStatus("save failed");
+      }
+    } catch {
+      setSaveSignalStatus("save failed");
+    }
+  }
+
   async function saveSuggestion(s: Suggestion, projectId: string): Promise<boolean> {
     try {
       const res = await fetch("/api/signals", {
@@ -502,6 +545,12 @@ export default function FocusPage() {
               className="text-xs font-bold bg-grass/15 text-grass rounded-full px-3 py-1 hover:bg-grass/25 disabled:opacity-60"
             >
               {suggesting ? "finding…" : "📚 suggested reading"}
+            </button>
+            <button
+              onClick={openSaveSignal}
+              className="text-xs font-bold bg-ink-800 text-ink-200 rounded-full px-3 py-1 hover:bg-ink-700"
+            >
+              💾 save as signal
             </button>
           </div>
         </div>
@@ -754,6 +803,51 @@ export default function FocusPage() {
           </div>
         </div>
       )}
+
+      {/* Save-as-signal popup */}
+      <PopOver
+        open={showSaveSignal}
+        tone="yellow"
+        emoji="💾"
+        kicker="save to research"
+        title="Save this as a signal"
+        onClose={() => setShowSaveSignal(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-ink-400 text-center">
+            Filing your own writing into a project — it&apos;ll be summarised and
+            connected like any captured signal.
+          </p>
+          <textarea
+            value={saveSignalText}
+            onChange={(e) => setSaveSignalText(e.target.value)}
+            rows={4}
+            className="w-full bg-ink-850 border border-ink-700 rounded-2xl px-3 py-2 text-sm focus:outline-none focus:border-accent resize-y"
+          />
+          <div className="flex items-center gap-2">
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) saveOwnSignal(e.target.value);
+              }}
+              className="flex-1 bg-ink-850 border border-ink-700 rounded-full px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            >
+              <option value="">save to project →</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              <option value="__unfiled__">Unfiled</option>
+            </select>
+            {saveSignalStatus && (
+              <span className="text-xs text-grass whitespace-nowrap">
+                {saveSignalStatus}
+              </span>
+            )}
+          </div>
+        </div>
+      </PopOver>
 
       {/* Suggested reading modal */}
       {showSuggestModal && (

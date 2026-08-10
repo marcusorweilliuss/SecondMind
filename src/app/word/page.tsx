@@ -596,7 +596,8 @@ export default function WordPanel() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               highlight_text: text,
-              source_title: "Microsoft Word",
+              source_title: "My writing",
+              origin: "self",
               project_id: activeProject || null,
             }),
           });

@@ -14,6 +14,8 @@ type CaptureBody = {
   source_url?: string;
   source_title?: string;
   project_id?: string | null;
+  /** "self" marks a passage of the user's own writing (vs a web capture). */
+  origin?: "self" | "web";
 };
 
 const SUMMARY_SYSTEM = `You are Cortex, a research assistant that distils highlighted text into a single crisp sentence.
@@ -49,12 +51,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "highlight_text is required" }, { status: 400 });
   }
 
+  const isSelf = body.origin === "self";
+  // Label self-authored passages distinctly from web captures.
+  const sourceTitle = body.source_title || (isSelf ? "My writing" : null);
+
   const db = createServiceSupabase();
 
   // (a) Summarise the highlight.
   const signalSummary = await llmGenerate(
     SUMMARY_SYSTEM,
-    `Highlight:\n"""${highlight}"""\n\nSource: ${body.source_title || "unknown"} (${body.source_url || "n/a"})`,
+    `Highlight:\n"""${highlight}"""\n\nSource: ${sourceTitle || "unknown"} (${body.source_url || "n/a"})`,
     { temperature: 0.2, maxOutputTokens: 120 }
   );
 
@@ -121,7 +127,7 @@ export async function POST(req: NextRequest) {
       project_id: projectId,
       highlight_text: highlight,
       source_url: body.source_url || null,
-      source_title: body.source_title || null,
+      source_title: sourceTitle,
       signal_summary: signalSummary,
       connected_to: connectedTo,
     })
