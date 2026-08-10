@@ -68,6 +68,13 @@ export default function WordPanel() {
   const [suggestMessage, setSuggestMessage] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
 
+  // Bibliography (Step 5)
+  const [showBiblio, setShowBiblio] = useState(false);
+  const [biblioStyle, setBiblioStyle] = useState<"apa" | "mla" | "chicago">("apa");
+  const [biblioEntries, setBiblioEntries] = useState<string[] | null>(null);
+  const [biblioLoading, setBiblioLoading] = useState(false);
+  const [biblioMessage, setBiblioMessage] = useState("");
+
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
   const refreshRef = useRef<string | null>(null);
@@ -484,6 +491,50 @@ export default function WordPanel() {
     }
   }, [readDocText, authedFetch]);
 
+  // Bibliography (Step 5).
+  const runBibliography = useCallback(
+    async (style: "apa" | "mla" | "chicago") => {
+      if (!tokenRef.current) return;
+      setBiblioLoading(true);
+      setBiblioEntries(null);
+      setBiblioMessage("");
+      try {
+        const res = await authedFetch("/api/bibliography", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: activeProject || null, style }),
+        });
+        const d = await res.json();
+        setBiblioEntries(d.entries ?? []);
+        setBiblioMessage(d.message || "");
+      } catch {
+        setBiblioMessage("Couldn't build the bibliography — try again.");
+      } finally {
+        setBiblioLoading(false);
+      }
+    },
+    [authedFetch, activeProject]
+  );
+
+  const insertBibliography = useCallback(async () => {
+    if (!biblioEntries?.length) return;
+    try {
+      await window.Word.run(async (context: any) => {
+        const body = context.document.body;
+        body.insertParagraph("References", window.Word.InsertLocation.end);
+        for (const e of biblioEntries) {
+          body.insertParagraph(e, window.Word.InsertLocation.end);
+        }
+        await context.sync();
+      });
+      setSignalMsg("bibliography inserted ✓");
+      setTimeout(() => setSignalMsg(""), 2500);
+    } catch {
+      setSignalMsg("couldn't insert bibliography");
+      setTimeout(() => setSignalMsg(""), 2500);
+    }
+  }, [biblioEntries]);
+
   const saveSuggestion = useCallback(
     async (s: Suggestion, projectId: string): Promise<boolean> => {
       try {
@@ -753,6 +804,69 @@ export default function WordPanel() {
       >
         {suggesting ? "finding…" : "📚 suggested reading"}
       </button>
+      <button
+        onClick={() => {
+          setShowBiblio((v) => !v);
+          setBiblioEntries(null);
+          setBiblioMessage("");
+        }}
+        className="w-full text-xs font-bold bg-ink-800 text-ink-200 rounded-full px-2 py-2 hover:bg-ink-700"
+      >
+        🔖 bibliography
+      </button>
+
+      {/* Bibliography panel */}
+      {showBiblio && (
+        <div className="bg-ink-900 border border-ink-700 rounded-2xl p-3 space-y-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-bold text-ink-200 mr-auto">
+              🔖 {activeProject ? "this project" : "all projects"}
+            </span>
+            <div className="flex rounded-full border border-ink-700 overflow-hidden">
+              {(["apa", "mla", "chicago"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setBiblioStyle(st)}
+                  className={`text-[10px] px-2 py-1 ${
+                    biblioStyle === st
+                      ? "bg-accent text-ink-950 font-bold"
+                      : "text-ink-300"
+                  }`}
+                >
+                  {st.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => runBibliography(biblioStyle)}
+              disabled={biblioLoading}
+              className="text-[11px] font-bold bg-accent text-ink-950 rounded-full px-2.5 py-1 disabled:opacity-60"
+            >
+              {biblioLoading ? "…" : "build"}
+            </button>
+          </div>
+          {biblioMessage && (!biblioEntries || biblioEntries.length === 0) && (
+            <p className="text-[11px] text-ink-300">{biblioMessage}</p>
+          )}
+          {biblioEntries && biblioEntries.length > 0 && (
+            <>
+              <div className="space-y-1.5 text-[11px] text-ink-200 leading-relaxed max-h-52 overflow-auto">
+                {biblioEntries.map((e, i) => (
+                  <p key={i} className="pl-4 -indent-4">
+                    {e}
+                  </p>
+                ))}
+              </div>
+              <button
+                onClick={insertBibliography}
+                className="w-full text-[11px] font-bold bg-accent text-ink-950 rounded-full px-2 py-1.5"
+              >
+                insert into document ↓
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Suggested reading results */}
       {showSuggest && (

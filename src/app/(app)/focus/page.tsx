@@ -129,6 +129,15 @@ export default function FocusPage() {
   const [saveSignalText, setSaveSignalText] = useState("");
   const [saveSignalStatus, setSaveSignalStatus] = useState("");
 
+  // Bibliography (Step 5)
+  const [showBiblio, setShowBiblio] = useState(false);
+  const [biblioStyle, setBiblioStyle] = useState<"apa" | "mla" | "chicago">("apa");
+  const [biblioProject, setBiblioProject] = useState("");
+  const [biblioEntries, setBiblioEntries] = useState<string[] | null>(null);
+  const [biblioLoading, setBiblioLoading] = useState(false);
+  const [biblioMessage, setBiblioMessage] = useState("");
+  const [biblioCopied, setBiblioCopied] = useState(false);
+
   // Single active centered popup + dismissal memory
   const [popup, setPopup] = useState<Popup>(null);
   const [copied, setCopied] = useState(false);
@@ -360,6 +369,40 @@ export default function FocusPage() {
     }
   }
 
+  // Bibliography (Step 5).
+  async function runBibliography(
+    projectId = biblioProject,
+    style = biblioStyle
+  ) {
+    setBiblioLoading(true);
+    setBiblioEntries(null);
+    setBiblioMessage("");
+    try {
+      const res = await fetch("/api/bibliography", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId || null,
+          style,
+        }),
+      });
+      const d = await res.json();
+      setBiblioEntries(d.entries ?? []);
+      setBiblioMessage(d.message || "");
+    } catch {
+      setBiblioMessage("Couldn't build the bibliography — try again.");
+    } finally {
+      setBiblioLoading(false);
+    }
+  }
+
+  function copyBiblio() {
+    if (!biblioEntries?.length) return;
+    navigator.clipboard.writeText(biblioEntries.join("\n\n"));
+    setBiblioCopied(true);
+    setTimeout(() => setBiblioCopied(false), 1500);
+  }
+
   async function saveSuggestion(s: Suggestion, projectId: string): Promise<boolean> {
     try {
       const res = await fetch("/api/signals", {
@@ -551,6 +594,16 @@ export default function FocusPage() {
               className="text-xs font-bold bg-ink-800 text-ink-200 rounded-full px-3 py-1 hover:bg-ink-700"
             >
               💾 save as signal
+            </button>
+            <button
+              onClick={() => {
+                setShowBiblio(true);
+                setBiblioEntries(null);
+                setBiblioMessage("");
+              }}
+              className="text-xs font-bold bg-ink-800 text-ink-200 rounded-full px-3 py-1 hover:bg-ink-700"
+            >
+              🔖 bibliography
             </button>
           </div>
         </div>
@@ -848,6 +901,94 @@ export default function FocusPage() {
           </div>
         </div>
       </PopOver>
+
+      {/* Bibliography modal */}
+      {showBiblio && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center px-6 bg-ink-950/70 backdrop-blur-sm animate-backdrop-in"
+          onClick={() => setShowBiblio(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-ink-900 border-2 border-ink-700 rounded-3xl p-6 animate-pop-in max-h-[80vh] overflow-auto"
+          >
+            <button
+              onClick={() => setShowBiblio(false)}
+              className="absolute top-3 right-4 text-ink-500 hover:text-ink-200 text-lg"
+            >
+              ×
+            </button>
+            <div className="text-center mb-4">
+              <div className="text-3xl mb-1">🔖</div>
+              <h3 className="text-lg font-bold">Bibliography</h3>
+              <p className="text-xs text-ink-400 mt-1">
+                Formatted from a project&apos;s cited sources.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 justify-center mb-4">
+              <select
+                value={biblioProject}
+                onChange={(e) => setBiblioProject(e.target.value)}
+                className="text-xs bg-ink-850 border border-ink-700 rounded-full px-3 py-1.5 focus:outline-none focus:border-accent"
+              >
+                <option value="">All projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <div className="flex rounded-full border border-ink-700 overflow-hidden">
+                {(["apa", "mla", "chicago"] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setBiblioStyle(st)}
+                    className={`text-xs px-3 py-1.5 ${
+                      biblioStyle === st
+                        ? "bg-accent text-ink-950 font-bold"
+                        : "text-ink-300 hover:text-ink-100"
+                    }`}
+                  >
+                    {st.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => runBibliography()}
+                disabled={biblioLoading}
+                className="text-xs font-bold bg-accent text-ink-950 rounded-full px-4 py-1.5 disabled:opacity-60"
+              >
+                {biblioLoading ? "building…" : "generate"}
+              </button>
+            </div>
+
+            {biblioMessage && (!biblioEntries || biblioEntries.length === 0) && (
+              <p className="text-sm text-ink-300 text-center py-6">{biblioMessage}</p>
+            )}
+
+            {biblioEntries && biblioEntries.length > 0 && (
+              <>
+                <div className="space-y-2 text-sm text-ink-200 leading-relaxed">
+                  {biblioEntries.map((e, i) => (
+                    <p key={i} className="pl-6 -indent-6">
+                      {e}
+                    </p>
+                  ))}
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button
+                    onClick={copyBiblio}
+                    className="text-sm border border-ink-700 rounded-full px-4 py-1.5 text-ink-300 hover:text-ink-100"
+                  >
+                    {biblioCopied ? "copied ✓" : "copy all"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Suggested reading modal */}
       {showSuggestModal && (
